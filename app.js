@@ -9,13 +9,13 @@
    is read from config.js. Do NOT edit it here: the website's security
    policy only allows this exact script. Inside Apps Script it is ignored.
    --------------------------------------------------------------------- */
-const API_URL = String((window.RIOT_CONFIG && window.RIOT_CONFIG.apiUrl) || 'https://script.google.com/macros/s/AKfycbxsW_v19SkMVE3wH6y2OumhT54-cVhAuQUKi1DIpLgDnEqSfIrI8QFfHzC-90RNNifk/exec').trim();
+const API_URL = String((window.RIOT_CONFIG && window.RIOT_CONFIG.apiUrl) || 'PASTE_YOUR_WEB_APP_EXEC_URL_HERE').trim();
 
 let CFG = {   // defaults; the server's settings replace these after sign-in
   labName: 'RIoT Center', orgName: 'Independent University, Bangladesh', appTitle: 'RIoT Center Inventory',
   raCanEditItems: true, requestRoles: ['student', 'ra', 'admin'], approverRoles: ['ra', 'admin'], autoApproveRoles: ['admin'],
   approvalBy: { student: ['ra', 'admin'], ra: ['admin'], admin: ['admin'] },
-  roomVisibleTo: ['admin', 'ra'], showCreditTo: ['ra', 'student'],
+  roomVisibleTo: ['admin', 'ra'], showCreditTo: ['ra', 'student'], allocRequestRoles: ['ra', 'student'],
   roles: { student: 'Student', ra: 'Research Assistant (RA)', admin: 'Admin' },
   creditName: 'JH Rony', creditUrl: 'https://rony-cse.github.io/',
   rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6'],
@@ -25,7 +25,7 @@ let CFG = {   // defaults; the server's settings replace these after sign-in
 };
 const IN_APPS_SCRIPT = typeof google !== 'undefined' && !!(google.script && google.script.run);
 const S = { token: null, user: null, items: [], myLoans: [], allLoans: [], users: [], log: [], overview: null, pending: null,
-            view: 'inventory', adminTab: 'overview', reqFilter: 'requests', allocs: [], cat: '', room: '', layout: 'grid', currentItem: null, imgCache: {} };
+            view: 'inventory', adminTab: 'overview', reqFilter: 'requests', allocFilter: '', allocs: [], cat: '', room: '', layout: 'grid', currentItem: null, imgCache: {} };
 
 // ---------- small helpers ----------
 const $ = (s) => document.querySelector(s);
@@ -50,6 +50,8 @@ const CAN = {
   approve: () => inRoles(CFG.approverRoles),
   takeDirect: () => inRoles(CFG.autoApproveRoles),
   loansView: () => !!S.user,
+  allocView: () => !!S.user,
+  allocRequest: () => inRoles(CFG.allocRequestRoles),
   seeRoom: () => inRoles(CFG.roomVisibleTo),
   credit: () => !!CFG.creditName && inRoles(CFG.showCreditTo),
 };
@@ -186,7 +188,10 @@ function showLogin(msg) {
   setTimeout(() => $('#loginUser').focus(), 50);
 }
 function endSession(msg) {
-  S.token = null; S.user = null; S.pending = null; store.del('riot_token');
+  S.token = null; S.user = null; S.pending = null;
+  S.items = []; S.allLoans = []; S.myLoans = []; S.allocs = []; S.users = []; S.log = []; S.overview = null;
+  lastSync = 0;
+  store.del('riot_token'); store.del(CACHE_KEY);   // nothing of this session stays on the device
   applyConfig({});   // removes the footer credit
   $$('.modal.show').forEach((m) => bootstrap.Modal.getInstance(m) && bootstrap.Modal.getInstance(m).hide());
   showLogin(msg);
@@ -203,29 +208,92 @@ async function doLogin(e) {
   } catch (err) { showErr('#loginAlert', err.message); }
   finally { btn.disabled = false; btn.textContent = 'Sign in'; }
 }
-async function loadApp() {
-  const d = await api('getBootstrap');
-  S.user = d.user; S.items = d.items; S.myLoans = d.myLoans; S.pending = d.pending;
+
+/* ---------------------------------------------------------------------
+   SPEED: one server call (getBootstrap) brings items, loans, allocations
+   and counts together. Every page then opens instantly from memory, and
+   fresh data is fetched quietly in the background (no waiting spinner).
+   The last data is also kept on this device, so the app opens at once.
+   --------------------------------------------------------------------- */
+const CACHE_KEY = 'riot_cache_v1', STALE_MS = 10000, POLL_MS = 90000;
+let lastSync = 0, syncing = null;
+function applyData(d) {
+  S.user = d.user; S.items = d.items || []; S.allLoans = d.loans || []; S.allocs = d.allocations || []; S.pending = d.pending;
+  deriveMine();
   applyConfig(d.config);
-  S.reqFilter = CAN.approve() ? 'requests' : 'all';
+}
+function deriveMine() { const u = S.user ? S.user.Username : ''; S.myLoans = S.allLoans.filter((l) => l.Username === u); }
+function saveCache(d) { store.set(CACHE_KEY, JSON.stringify({ token: S.token, data: d })); }
+function showApp() {
   $('#loginView').classList.add('d-none');
   $('#appView').classList.remove('d-none');
   $('#navUser').textContent = S.user.FullName || S.user.Username;
   $('#navUserRole').textContent = '@' + S.user.Username + ' · ' + ((CFG.roles || {})[role()] || role());
   applyPerms();
   fillCategoryList(); fillRoomFilter(); renderBadge();
+}
+function renderCurrent() {
+  if (S.view === 'inventory') renderInventory();
+  else if (S.view === 'loans') renderMyLoans();
+  else if (S.view === 'requests') renderRequests();
+  else if (S.view === 'alloc') renderAlloc();
+  else if (S.view === 'admin' && S.adminTab === 'overview') renderOverview();
+}
+/** Get fresh data. visible = show the spinner (Refresh buttons); otherwise it runs quietly. Resolves true/false. */
+function sync(visible) {
+  if (!S.token) return Promise.resolve(false);
+  if (syncing) return syncing;
+  const p = visible ? api('getBootstrap') : call('getBootstrap', [S.token]);
+  syncing = p.then((d) => {
+    applyData(d); lastSync = Date.now(); saveCache(d);
+    showApp(); renderCurrent();
+    return true;
+  }).catch((e) => {
+    if (/SESSION_EXPIRED|Session expired/.test(e.message)) { if (S.token) endSession('Your session has expired. Please sign in again.'); }
+    else if (visible) fail(e);
+    return false;
+  }).finally(() => { syncing = null; });
+  return syncing;
+}
+function startViews() {
+  S.reqFilter = CAN.approve() ? 'requests' : 'all';
+  showApp();
   setLayout(store.get('riot_layout') || 'grid', true);
   setView(store.get('riot_view') || 'inventory');
 }
-/* RA/Admin: keep the "Requests" badge up to date (every 60 s while the page is open). */
+async function loadApp() {
+  const d = await api('getBootstrap');
+  applyData(d); lastSync = Date.now(); saveCache(d);
+  startViews();
+}
+/** Instant start: show the data saved on this device by the last visit, then refresh quietly. */
+function startFromCache() {
+  let c = null;
+  try { c = JSON.parse(store.get(CACHE_KEY) || 'null'); } catch (e) { c = null; }
+  if (!c || c.token !== S.token || !c.data || !c.data.user) return false;
+  applyData(c.data);
+  lastSync = 0;          // treat as old → setView() refreshes in the background
+  startViews();
+  return true;
+}
+// keep everything fresh while the page is open (quietly, every 90 s) and when coming back to the tab
 setInterval(() => {
-  if (!S.token || !CAN.approve() || document.visibilityState !== 'visible') return;
-  call('getPendingCounts', [S.token]).then((p) => { S.pending = p; renderBadge(); }).catch(() => {});
-}, 60000);
+  if (S.token && document.visibilityState === 'visible' && Date.now() - lastSync > POLL_MS) sync(false);
+}, 15000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.token && Date.now() - lastSync > STALE_MS) sync(false);
+});
 function renderBadge() {
-  const p = S.pending, n = p ? p.requests + p.returns : 0, b = $('#navBadge');
+  const loans = S.allLoans.filter((l) => l.CanAct);
+  const req = loans.filter((l) => l.Status === 'REQUESTED').length, ret = loans.filter((l) => l.Status === 'RETURN_PENDING').length;
+  const b = $('#navBadge'), n = CAN.approve() ? req + ret : 0;
   b.textContent = n; b.classList.toggle('d-none', !n);
-  b.title = p ? p.requests + ' request(s) to approve, ' + p.returns + ' return(s) to check' : '';
+  b.title = req + ' request(s) to approve, ' + ret + ' return(s) to check';
+  const ar = CAN.admin() ? S.allocs.filter((a) => a.Status === 'REQUESTED').length : 0;
+  const at = CAN.admin() ? S.allocs.filter((a) => a.Status === 'RETURN_PENDING').length : 0;
+  const c = $('#navBadgeAlloc');
+  c.textContent = ar + at; c.classList.toggle('d-none', !(ar + at));
+  c.title = ar + ' allocation request(s), ' + at + ' return(s) to check';
 }
 async function doLogout() {
   const t = S.token;
@@ -238,17 +306,16 @@ async function doLogout() {
 // =====================================================================
 function setView(v) {
   if ((v === 'admin' && !CAN.admin()) || (v === 'loans' && !CAN.request()) || (v === 'requests' && !CAN.loansView()) ||
-      !document.getElementById('view-' + v)) v = 'inventory';
+      (v === 'alloc' && !CAN.allocView()) || !document.getElementById('view-' + v)) v = 'inventory';
   S.view = v; store.set('riot_view', v);
   $$('.app-view').forEach((el) => el.classList.toggle('d-none', el.id !== 'view-' + v));
   $$('.app-nav .nav-link').forEach((el) => el.classList.toggle('active', el.dataset.view === v));
   const nav = document.getElementById('mainNav');
   if (nav.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(nav).hide();
-  if (v === 'inventory') renderInventory();
-  if (v === 'loans') { renderMyLoans(); refreshMyLoans(true); }
-  if (v === 'requests') loadRequests();
-  if (v === 'admin') setAdminTab(S.adminTab === 'loans' ? 'overview' : S.adminTab);
+  if (v === 'admin') setAdminTab(S.adminTab === 'loans' || S.adminTab === 'allocations' ? 'overview' : S.adminTab);
+  else renderCurrent();                                     // instant, from memory
   window.scrollTo(0, 0);
+  if (Date.now() - lastSync > STALE_MS) sync(false);        // then refresh quietly if older than 20 s
 }
 
 // =====================================================================
@@ -358,7 +425,9 @@ function catIcon(c) { const m = CAT_ICONS.find(([re]) => re.test(c || '')); retu
 function imgHtml(it, cls) {
   if (!it.ImageFileId) return '<i class="bi ' + catIcon(it.Category) + ' ' + cls + '"></i>';
   const cached = S.imgCache[it.ImageFileId];
-  return '<img class="item-photo" loading="lazy" referrerpolicy="no-referrer" alt="" data-fid="' + esc(it.ImageFileId) + '" data-cat="' + esc(it.Category) + '" src="' + esc(cached || it.ImageURL) + '">';
+  // small thumbnails (400 px) for cards and lists; the bigger one only in the item detail
+  const url = cls === 'ph' ? String(it.ImageURL).replace('sz=w800', 'sz=w400') : it.ImageURL;
+  return '<img class="item-photo" loading="lazy" decoding="async" referrerpolicy="no-referrer" alt="" data-fid="' + esc(it.ImageFileId) + '" data-cat="' + esc(it.Category) + '" src="' + esc(cached || url) + '">';
 }
 const whereText = (it) => [it.Room, it.Location].map((x) => String(x || '').trim()).filter(Boolean).join(' · ');
 function stockBadge(it) {
@@ -441,12 +510,7 @@ function upsertItem(it) {
   if (i >= 0) S.items[i] = it; else S.items.push(it);
 }
 async function refreshAll() {
-  try {
-    const d = await api('getBootstrap');
-    S.items = d.items; S.myLoans = d.myLoans; S.user = d.user; S.pending = d.pending;
-    applyConfig(d.config);
-    applyPerms(); fillCategoryList(); fillRoomFilter(); renderBadge(); setView(S.view); toast('Inventory refreshed');
-  } catch (e) { fail(e); }
+  if (await sync(true)) toast('Inventory refreshed');
 }
 
 // ---------- item detail ----------
@@ -473,52 +537,73 @@ function openItem(id) {
         (it.Details ? '<h6 class="fw-semibold small text-muted text-uppercase">Details</h6><div class="pre-wrap small mb-3">' + esc(it.Details) + '</div>' : '') +
       '</div>' +
     '</div>';
-  if (CAN.request()) {
+  const canAlloc = CAN.allocRequest();
+  if (CAN.request() || canAlloc) {
     const direct = CAN.takeDirect();
+    const me = S.user.Username;
     const mine = S.myLoans.filter((l) => l.ItemID === it.ItemID && ACTIVE[l.Status]);
-    html += '<hr><h6 class="fw-bold mb-2"><i class="bi ' + (direct ? 'bi-box-arrow-up-right' : 'bi-send') + ' me-2 text-brand"></i>' + (direct ? 'Take out' : 'Request to borrow') + '</h6>';
-    if (mine.length) {
-      html += '<div class="alert alert-info py-2 small">' + mine.map((l) => 'You have ' + l.Qty + ' × this item: <b>' + esc(loanLabel(l)[0]) + '</b>').join('<br>') +
-        ' — see <a href="#" data-action="nav" data-view="loans">My Items</a>.</div>';
+    const myAl = S.allocs.filter((a) => a.ItemID === it.ItemID && a.Username === me && ACTIVE_AL[a.Status]);
+    html += '<hr><h6 class="fw-bold mb-2"><i class="bi ' + (direct ? 'bi-box-arrow-up-right' : 'bi-send') + ' me-2 text-brand"></i>' + (direct ? 'Take out' : 'Request this item') + '</h6>';
+    if (mine.length || myAl.length) {
+      html += '<div class="alert alert-info py-2 small">' +
+        mine.map((l) => 'You have ' + l.Qty + ' × this item on loan: <b>' + esc(loanLabel(l)[0]) + '</b> — see <a href="#" data-action="nav" data-view="loans">My Items</a>').join('<br>') +
+        (mine.length && myAl.length ? '<br>' : '') +
+        myAl.map((a) => 'Allocation of ' + a.Qty + ' × this item: <b>' + esc(allocLabel(a)[0]) + '</b> — see <a href="#" data-action="nav" data-view="alloc">Allocation</a>').join('<br>') + '</div>';
     }
     if (it.AvailableQty > 0) {
       html +=
-        (direct ? '' : '<p class="small text-muted mb-2">' + esc(approverText().replace(/^./, (c) => c.toUpperCase())) + ' will approve your request. Collect the item from the lab after it is approved.</p>') +
+        (canAlloc ? '<div class="btn-group btn-group-sm mb-2 flex-wrap" role="group" aria-label="Request type">' +
+          '<input type="radio" class="btn-check" name="bKind" id="bKindLoan" value="loan" checked><label class="btn btn-outline-primary" for="bKindLoan"><i class="bi bi-arrow-left-right me-1"></i>Borrow (short-term)</label>' +
+          '<input type="radio" class="btn-check" name="bKind" id="bKindAlloc" value="alloc"><label class="btn btn-outline-primary" for="bKindAlloc"><i class="bi bi-pc-display me-1"></i>Allocate to me (long-term)</label>' +
+        '</div>' : '') +
+        '<p class="small text-muted mb-2" id="bHelp"></p>' +
         '<form id="borrowForm" class="row g-2 align-items-end">' +
           '<div class="col-4 col-md-2"><label class="form-label small fw-medium" for="bQty">Qty</label><input class="form-control" type="number" id="bQty" min="1" max="' + it.AvailableQty + '" value="1" required></div>' +
-          '<div class="col-8 col-md-4"><label class="form-label small fw-medium" for="bDate">Return by (optional)</label><input class="form-control" type="date" id="bDate" min="' + todayStr() + '"></div>' +
+          '<div class="col-8 col-md-4" id="bDateWrap"><label class="form-label small fw-medium" for="bDate">Return by (optional)</label><input class="form-control" type="date" id="bDate" min="' + todayStr() + '"></div>' +
           '<div class="col-12 col-md-6"><label class="form-label small fw-medium" for="bPurpose">Purpose / project *</label><input class="form-control" id="bPurpose" maxlength="300" placeholder="e.g. CSE-499 capstone, smart irrigation" required></div>' +
-          '<div class="col-12"><div id="bError" class="alert alert-danger py-2 small d-none mb-2"></div><button class="btn btn-primary" type="submit" id="bSubmit">' +
-            (direct ? '<i class="bi bi-check2-circle me-1"></i>Confirm take out' : '<i class="bi bi-send me-1"></i>Send request') + '</button></div>' +
+          '<div class="col-12"><div id="bError" class="alert alert-danger py-2 small d-none mb-2"></div><button class="btn btn-primary" type="submit" id="bSubmit"></button></div>' +
         '</form>';
     } else {
       html += '<p class="text-muted small mb-0">Currently out of stock.</p>';
     }
   }
-  html += '<hr><h6 class="fw-bold mb-2"><i class="bi bi-people me-2 text-brand"></i>Who has requested / borrowed this</h6><div id="imLoans" class="small text-muted">Loading…</div>';
-  if (CAN.admin()) html += '<h6 class="fw-bold mb-2 mt-3"><i class="bi bi-person-workspace me-2 text-brand"></i>Allocated to</h6><div id="imAllocs" class="small text-muted">Loading…</div>';
+  html += '<hr><h6 class="fw-bold mb-2"><i class="bi bi-people me-2 text-brand"></i>Who has requested / borrowed this</h6><div id="imLoans" class="small text-muted">' + itemLoansHtml(it) + '</div>';
+  if (CAN.admin()) html += '<h6 class="fw-bold mb-2 mt-3"><i class="bi bi-person-workspace me-2 text-brand"></i>Allocated to</h6><div id="imAllocs" class="small text-muted">' + itemAllocsHtml(it) + '</div>';
   $('#imBody').innerHTML = html;
-  const f = $('#borrowForm'); if (f) f.addEventListener('submit', submitBorrow);
+  const f = $('#borrowForm');
+  if (f) {
+    f.addEventListener('submit', submitBorrow);
+    $$('input[name=bKind]').forEach((r) => r.addEventListener('change', borrowKindChanged));
+    borrowKindChanged();
+  }
   applyPerms($('#imFooter'));
   $('#imFooter').classList.toggle('d-none', !(CAN.editItem() || CAN.deleteItem()));
   modal('itemModal').show();
-  if (CAN.admin()) {
-    api('listAllocations', it.ItemID).then((list) => {
-      const el = $('#imAllocs'); if (!el || S.currentItem !== it) return;
-      el.innerHTML = list.length ? '<ul class="list-unstyled mb-0">' + list.map((a) =>
-        '<li class="py-1 border-bottom"><b>' + a.Qty + '×</b> ' + esc(a.FullName) + ' <span class="text-muted">(@' + esc(a.Username) + ')</span> · since ' + fmtDate(a.AllocatedAt) +
-        (a.Note ? '<div class="text-muted">' + esc(a.Note) + '</div>' : '') + '</li>').join('') + '</ul>' : 'Not allocated to anyone.';
-    }).catch(fail);
-  }
-  {
-    api('listLoans', 'item', it.ItemID).then((loans) => {
-      const el = $('#imLoans'); if (!el || S.currentItem !== it) return;
-      el.innerHTML = loans.length ? '<ul class="list-unstyled mb-0">' + loans.map((l) =>
-        '<li class="py-1 border-bottom"><b>' + l.Qty + '×</b> ' + esc(l.FullName) + ' <span class="text-muted">(@' + esc(l.Username) + ')</span> · ' +
-        statusBadge(l) + ' <span class="text-muted">' + fmtDate(l.BorrowedAt || l.RequestedAt) + '</span><div class="text-muted">' + esc(l.Purpose) + '</div></li>').join('') + '</ul>'
-        : 'Nobody has this item or has asked for it right now.';
-    }).catch(fail);
-  }
+}
+/* lists inside the item detail come straight from memory: no waiting */
+function itemLoansHtml(it) {
+  const loans = S.allLoans.filter((l) => l.ItemID === it.ItemID && ACTIVE[l.Status]);
+  return loans.length ? '<ul class="list-unstyled mb-0">' + loans.map((l) =>
+    '<li class="py-1 border-bottom"><b>' + l.Qty + '×</b> ' + esc(l.FullName) + ' <span class="text-muted">(@' + esc(l.Username) + ')</span> · ' +
+    statusBadge(l) + ' <span class="text-muted">' + fmtDate(l.BorrowedAt || l.RequestedAt) + '</span><div class="text-muted">' + esc(l.Purpose) + '</div></li>').join('') + '</ul>'
+    : 'Nobody has this item or has asked for it right now.';
+}
+function itemAllocsHtml(it) {
+  const list = S.allocs.filter((a) => a.ItemID === it.ItemID && ACTIVE_AL[a.Status]);
+  return list.length ? '<ul class="list-unstyled mb-0">' + list.map((a) =>
+    '<li class="py-1 border-bottom"><b>' + a.Qty + '×</b> ' + esc(a.FullName) + ' <span class="text-muted">(@' + esc(a.Username) + ')</span> · ' + allocBadge(a) +
+    (allocRoom(a) ? ' · ' + esc(allocRoom(a)) : '') + (a.AllocatedAt ? ' · since ' + fmtDate(a.AllocatedAt) : '') +
+    (a.Note || a.Purpose ? '<div class="text-muted">' + esc(a.Note || a.Purpose) + '</div>' : '') + '</li>').join('') + '</ul>' : 'Not allocated to anyone.';
+}
+function borrowKindChanged() {
+  const alloc = !!($('#bKindAlloc') && $('#bKindAlloc').checked), direct = CAN.takeDirect();
+  $('#bDateWrap').classList.toggle('d-none', alloc);
+  $('#bHelp').textContent = alloc
+    ? 'For long-term use (e.g. a laptop or desktop for your work). The Admin decides; you will see it under Allocation.'
+    : (direct ? '' : approverText().replace(/^./, (c) => c.toUpperCase()) + ' will approve your request. Collect the item from the lab after it is approved.');
+  $('#bHelp').classList.toggle('d-none', !$('#bHelp').textContent);
+  $('#bSubmit').innerHTML = alloc ? '<i class="bi bi-pc-display me-1"></i>Send allocation request'
+    : (direct ? '<i class="bi bi-check2-circle me-1"></i>Confirm take out' : '<i class="bi bi-send me-1"></i>Send request');
 }
 async function submitBorrow(e) {
   e.preventDefault();
@@ -526,8 +611,15 @@ async function submitBorrow(e) {
   showErr('#bError', '');
   const btn = $('#bSubmit'); btn.disabled = true;
   try {
+    if ($('#bKindAlloc') && $('#bKindAlloc').checked) {
+      const ra = await api('requestAllocation', it.ItemID, Number($('#bQty').value), $('#bPurpose').value);
+      S.allocs.unshift(ra.allocation);
+      modal('itemModal').hide(); renderBadge();
+      toast('Allocation request sent for ' + ra.allocation.Qty + ' × ' + ra.allocation.ItemName + '. The Admin will decide — see Allocation.');
+      return;
+    }
     const r = await api('requestLoan', it.ItemID, Number($('#bQty').value), $('#bPurpose').value, $('#bDate').value);
-    upsertItem(r.item); S.myLoans.unshift(r.loan);
+    upsertItem(r.item); S.allLoans.unshift(r.loan); deriveMine(); renderBadge();
     modal('itemModal').hide(); renderInventory();
     if (r.loan.Status === 'OPEN') toast('You took ' + r.loan.Qty + ' × ' + r.loan.ItemName + '. Remember to return it!');
     else toast('Request sent for ' + r.loan.Qty + ' × ' + r.loan.ItemName + '. You will see the answer in My Items.');
@@ -806,6 +898,7 @@ function renderMyLoans() {
 }
 function replaceLoan(loan) {
   [S.myLoans, S.allLoans].forEach((arr) => { const i = arr.findIndex((x) => x.LoanID === loan.LoanID); if (i >= 0) arr[i] = loan; });
+  renderBadge();
 }
 async function cancelRequest(id) {
   const l = S.myLoans.find((x) => x.LoanID === id); if (!l) return;
@@ -817,12 +910,7 @@ async function reportReturn(id) {
   if (!(await confirmBox('Return ' + l.Qty + ' × ' + l.ItemName + '?', 'Give the item to ' + approverText() + ' in the lab. They will check it and close the loan.', 'Yes, I returned it'))) return;
   try { const r = await api('markReturned', id); replaceLoan(r.loan); renderMyLoans(); toast('Thanks! ' + approverText().replace(/^./, (c) => c.toUpperCase()) + ' will check the item.'); } catch (e) { fail(e); }
 }
-async function refreshMyLoans(silent) {
-  try {
-    S.myLoans = silent ? await call('listLoans', [S.token, 'mine']) : await api('listLoans', 'mine');
-    if (S.view === 'loans') renderMyLoans();
-  } catch (e) { if (!silent) fail(e); }
-}
+function refreshMyLoans(silent) { return sync(!silent); }
 
 // =====================================================================
 //  LOANS & REQUESTS — everyone can see who asked for / has what; only allowed people act
@@ -835,17 +923,7 @@ const REQ_FILTERS = [
   ['closed', 'History', (l) => !ACTIVE[l.Status]],
   ['all', 'All', () => true],
 ];
-async function loadRequests() {
-  renderRequests();
-  try {
-    S.allLoans = await api('listLoans', 'all');
-    if (CAN.approve()) {
-      S.pending = { requests: S.allLoans.filter((l) => l.CanAct && l.Status === 'REQUESTED').length, returns: S.allLoans.filter((l) => l.CanAct && l.Status === 'RETURN_PENDING').length };
-      renderBadge();
-    }
-    renderRequests();
-  } catch (e) { fail(e); }
-}
+function loadRequests() { return sync(true); }
 function renderRequests() {
   $('#reqSub').textContent = CAN.approve()
     ? 'Approve requests and check returned items' + (role() === 'ra' ? ' (students’ requests; RA requests are approved by the Admin)' : '') + '. Everyone can see this list.'
@@ -890,13 +968,17 @@ function renderRequests() {
   }).join('') + '</div>';
 }
 function findAnyLoan(id) { return S.allLoans.find((x) => x.LoanID === id) || S.myLoans.find((x) => x.LoanID === id); }
-function openDecide(id, approve) {
-  const l = findAnyLoan(id); if (!l) return;
+function openDecide(id, approve, kind) {
+  const isAl = kind === 'alloc';
+  const l = isAl ? S.allocs.find((x) => x.AllocID === id) : findAnyLoan(id); if (!l) return;
   const it = S.items.find((x) => x.ItemID === l.ItemID);
   $('#decideForm').reset(); showErr('#dcError', '');
-  $('#dcId').value = id; $('#dcMode').value = approve ? 'approve' : 'reject';
-  $('#dcTitle').textContent = approve ? 'Approve request' : 'Reject request';
+  $('#dcId').value = id; $('#dcMode').value = approve ? 'approve' : 'reject'; $('#dcKind').value = isAl ? 'alloc' : 'loan';
+  $('#dcTitle').textContent = (approve ? 'Approve ' : 'Reject ') + (isAl ? 'allocation request' : 'request');
+  $('#dcRoomWrap').classList.toggle('d-none', !(isAl && approve));
+  $('#dcRoom').value = it && it.Room ? it.Room : '';
   $('#dcInfo').innerHTML = '<b>' + esc(l.FullName) + '</b> <span class="text-muted">@' + esc(l.Username) + '</span> asks for <b>' + l.Qty + ' × ' + esc(l.ItemName) + '</b>' +
+    (isAl ? ' <span class="badge text-bg-light border">long-term</span>' : '') +
     '<div class="small text-muted">' + esc(l.Purpose) + (l.ExpectedReturn ? ' · return by ' + fmtDate(l.ExpectedReturn) : '') + '</div>';
   $('#dcQtyWrap').classList.toggle('d-none', !approve);
   const avail = it ? it.AvailableQty : 0;
@@ -913,10 +995,19 @@ async function submitDecide(e) {
   e.preventDefault(); showErr('#dcError', '');
   const id = $('#dcId').value, approve = $('#dcMode').value === 'approve';
   const btn = $('#dcSubmit'); btn.disabled = true;
+  if ($('#dcKind').value === 'alloc') {
+    try {
+      const r = await api('decideAllocation', id, approve, approve ? Number($('#dcQty').value) : '', approve ? $('#dcRoom').value : '', $('#dcNote').value);
+      replaceAlloc(r.allocation); if (r.item) upsertItem(r.item);
+      modal('decideModal').hide(); renderAlloc();
+      toast(approve ? 'Allocated ' + r.allocation.Qty + ' × ' + r.allocation.ItemName + ' to ' + r.allocation.FullName : 'Allocation request rejected');
+    } catch (err) { showErr('#dcError', err.message); }
+    finally { btn.disabled = false; }
+    return;
+  }
   try {
     const r = await api('decideRequest', id, approve, approve ? Number($('#dcQty').value) : '', $('#dcNote').value);
     replaceLoan(r.loan); if (r.item) upsertItem(r.item);
-    if (S.pending) { S.pending.requests = Math.max(0, S.pending.requests - 1); renderBadge(); }
     modal('decideModal').hide(); renderRequests(); renderMyLoans();
     toast(approve ? 'Approved: ' + r.loan.Qty + ' × ' + r.loan.ItemName + ' for ' + r.loan.FullName : 'Request rejected');
   } catch (err) { showErr('#dcError', err.message); }
@@ -946,7 +1037,8 @@ function openEndAlloc(id) {
   $('#vfId').value = id; $('#vfKind').value = 'alloc';
   $('#vfTitle').textContent = 'End allocation';
   $('#vfInfo').innerHTML = '<b>' + esc(a.FullName) + '</b> <span class="text-muted">@' + esc(a.Username) + '</span> has <b>' + a.Qty + ' × ' + esc(a.ItemName) + '</b>' +
-    '<div class="small text-muted">allocated ' + fmtDate(a.AllocatedAt) + (a.Note ? ' · ' + esc(a.Note) : '') + '</div>';
+    '<div class="small text-muted">allocated ' + fmtDate(a.AllocatedAt) + (allocRoom(a) ? ' · ' + esc(allocRoom(a)) : '') + (a.Note ? ' · ' + esc(a.Note) : '') +
+    (a.Status === 'RETURN_PENDING' ? ' · <span class="text-info-emphasis">return requested ' + fmtDateTime(a.ReturnReportedAt) + '</span>' : '') + '</div>';
   const before = it && it.Condition ? it.Condition : '';
   $('#vfCond').innerHTML = CFG.conditions.map((c) => '<option>' + esc(c) + '</option>').join('') + '<option value="Lost">Lost / not returned</option>';
   $('#vfCond').value = CFG.conditions.indexOf(before) >= 0 ? before : 'Good';
@@ -976,17 +1068,14 @@ async function submitVerify(e) {
   if ($('#vfKind').value === 'alloc') {
     try {
       const r = await api('endAllocation', id, cond === 'Lost' ? 0 : Number($('#vfQty').value), cond, setCond, $('#vfNote').value);
-      const i = S.allocs.findIndex((x) => x.AllocID === id); if (i >= 0) S.allocs[i] = r.allocation;
-      upsertItem(r.item); modal('verifyModal').hide(); renderAllocations(); toast('Allocation ended');
+      replaceAlloc(r.allocation); upsertItem(r.item); modal('verifyModal').hide(); renderAlloc(); toast('Allocation ended — item back in stock');
     } catch (err) { showErr('#vfError', err.message); }
     finally { btn.disabled = false; }
     return;
   }
   try {
     const r = await api('verifyReturn', id, cond === 'Lost' ? 0 : Number($('#vfQty').value), cond, setCond, $('#vfNote').value);
-    const wasPending = (findAnyLoan(id) || {}).Status === 'RETURN_PENDING';
     replaceLoan(r.loan); upsertItem(r.item);
-    if (S.pending && wasPending) { S.pending.returns = Math.max(0, S.pending.returns - 1); renderBadge(); }
     modal('verifyModal').hide();
     if (S.view === 'requests') renderRequests(); if (S.view === 'loans') renderMyLoans(); if (S.view === 'inventory') renderInventory();
     toast('Loan closed: ' + loanLabel(r.loan)[0]);
@@ -1001,30 +1090,136 @@ function setAdminTab(tab) {
   S.adminTab = tab;
   $$('#adminTabs .nav-link').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
   $$('.admin-tab').forEach((el) => el.classList.toggle('d-none', el.id !== 'tab-' + tab));
-  if (tab === 'overview') loadOverview();
-  if (tab === 'users') api('listUsers').then((u) => { S.users = u; renderUsers(); }).catch(fail);
-  if (tab === 'log') api('getLog', 300).then((l) => { S.log = l; renderLog(); }).catch(fail);
-  if (tab === 'allocations') loadAllocations();
+  // show what we already have at once, then refresh quietly
+  if (tab === 'overview') { renderOverview(); call('getAdminOverview', [S.token]).then((ov) => { S.overview = ov; if (S.view === 'admin' && S.adminTab === 'overview') renderOverview(); }).catch(() => {}); }
+  if (tab === 'users') { if (S.users.length) renderUsers(); (S.users.length ? call('listUsers', [S.token]) : api('listUsers')).then((u) => { S.users = u; renderUsers(); }).catch(fail); }
+  if (tab === 'log') { if (S.log.length) renderLog(); (S.log.length ? call('getLog', [S.token, 300]) : api('getLog', 300)).then((l) => { S.log = l; renderLog(); }).catch(fail); }
 }
-async function loadAllocations() {
-  try { S.allocs = await api('listAllocations', ''); renderAllocations(); } catch (e) { fail(e); }
+
+// =====================================================================
+//  ALLOCATION — long-term use (laptops, desktops …). Admin sees all; others see their own.
+// =====================================================================
+const ACTIVE_AL = { REQUESTED: 1, ACTIVE: 1, RETURN_PENDING: 1 };
+function allocLabel(a) {
+  switch (a.Status) {
+    case 'REQUESTED': return ['Waiting for approval', 'warning'];
+    case 'ACTIVE': return ['In use', 'primary'];
+    case 'RETURN_PENDING': return ['Return requested', 'info'];
+    case 'ENDED': return ['Returned' + (a.ReturnCondition ? ' · ' + a.ReturnCondition : ''), 'secondary'];
+    case 'REJECTED': return ['Rejected', 'danger'];
+    case 'CANCELLED': return ['Cancelled', 'light'];
+    default: return [a.Status || '—', 'light'];
+  }
 }
-function renderAllocations() {
-  const f = $('#aAllocFilter').value, q = $('#aAllocSearch').value.trim().toLowerCase();
-  const list = S.allocs.filter((a) => (f === 'all' || (f === 'active' ? a.Status === 'ACTIVE' : a.Status !== 'ACTIVE')) &&
-    (!q || [a.AllocID, a.ItemID, a.ItemName, a.Username, a.FullName, a.Note].join(' ').toLowerCase().indexOf(q) >= 0));
-  $('#aAllocs').innerHTML = list.length ? '<div class="row g-3">' + list.map((a) =>
-    '<div class="col-md-6 col-xl-4"><div class="card req-card h-100"><div class="card-body d-flex flex-column">' +
-      '<div class="d-flex justify-content-between align-items-start gap-2 mb-1"><div class="small text-muted">' + esc(a.AllocID) + ' · ' + esc(a.ItemID) + '</div>' +
-        (a.Status === 'ACTIVE' ? '<span class="badge text-bg-primary">In use</span>' : '<span class="badge text-bg-secondary">Ended' + (a.ReturnCondition ? ' · ' + esc(a.ReturnCondition) : '') + '</span>') + '</div>' +
-      '<h6 class="fw-bold mb-1"><a href="#" class="text-reset text-decoration-none" data-action="open-item" data-id="' + esc(a.ItemID) + '">' + a.Qty + ' × ' + esc(a.ItemName) + '</a></h6>' +
-      '<div class="who mb-1"><i class="bi bi-person me-1"></i>' + esc(a.FullName) + ' <span class="text-muted">@' + esc(a.Username) + '</span></div>' +
-      (a.Note ? '<div class="small text-muted mb-1">' + esc(a.Note) + '</div>' : '') +
-      '<div class="small">Since ' + fmtDate(a.AllocatedAt) + ' <span class="text-muted">by ' + esc(a.AllocatedBy) + '</span></div>' +
-      (a.EndedAt ? '<div class="small text-muted">Ended ' + fmtDate(a.EndedAt) + ' by ' + esc(a.EndedBy) + (a.EndNote ? ' — ' + esc(a.EndNote) : '') + '</div>' : '') +
-      (a.Status === 'ACTIVE' ? '<div class="mt-auto pt-3"><button class="btn btn-outline-primary btn-sm" data-action="end-alloc" data-id="' + esc(a.AllocID) + '"><i class="bi bi-box-arrow-in-down-left me-1"></i>End allocation</button></div>' : '') +
-    '</div></div></div>').join('') + '</div>'
-    : '<div class="card soft-card"><div class="empty"><i class="bi bi-person-workspace"></i>' + (S.allocs.length ? 'Nothing matches.' : 'No allocations yet. Click <b>Allocate</b>, or open an item → <b>Allocate</b>.') + '</div></div>';
+function allocBadge(a) { const [t, c] = allocLabel(a); return '<span class="badge text-bg-' + c + (c === 'light' ? ' border' : '') + '">' + esc(t) + '</span>'; }
+const allocRoom = (a) => String(a.Room || '').trim() || String((S.items.find((i) => i.ItemID === a.ItemID) || {}).Room || '').trim();
+function replaceAlloc(a) {
+  const i = S.allocs.findIndex((x) => x.AllocID === a.AllocID);
+  if (i >= 0) S.allocs[i] = a; else S.allocs.unshift(a);
+  renderBadge();
+}
+const AL_FILTERS = {
+  admin: [['requests', 'Requests', (a) => a.Status === 'REQUESTED'], ['returns', 'Returns to check', (a) => a.Status === 'RETURN_PENDING'],
+          ['current', 'In use', (a) => a.Status === 'ACTIVE' || a.Status === 'RETURN_PENDING'], ['closed', 'History', (a) => !ACTIVE_AL[a.Status]], ['all', 'All', () => true]],
+  user:  [['current', 'Current', (a) => !!ACTIVE_AL[a.Status]], ['closed', 'History', (a) => !ACTIVE_AL[a.Status]]],
+};
+function fillAllocRoomFilter() {
+  const sel = $('#avRoom'), keep = sel.value;
+  const rooms = new Set(CFG.rooms); let none = 0;
+  S.allocs.forEach((a) => { const r = allocRoom(a); if (r) rooms.add(r); else none++; });
+  sel.innerHTML = '<option value="">All rooms</option>' + Array.from(rooms).map((r) => '<option value="' + esc(r) + '">' + esc(r) + '</option>').join('') +
+    (none ? '<option value="' + NO_ROOM + '">Room not set</option>' : '');
+  sel.value = keep; if (sel.value !== keep) sel.value = '';
+}
+function renderAlloc() {
+  const admin = CAN.admin();
+  $('#avSub').textContent = admin ? 'Who has which device for long-term use. Search, filter by room, or group by person or room.' : 'Devices allocated to you for long-term use';
+  $('#avHowTo').classList.toggle('d-none', admin);
+  if (!admin) $('#avHowTo').innerHTML = '<i class="bi bi-info-circle me-1"></i><b>How it works:</b> to ask for a device (e.g. a laptop or desktop), open it in Inventory → <b>Request this item</b> → <b>Allocate to me (long-term)</b>. ' +
+    'The Admin approves it. When you no longer need it, press <b>Request return</b> and hand it over; the Admin checks it and closes the allocation.';
+  const filters = AL_FILTERS[admin ? 'admin' : 'user'];
+  if (!filters.some(([k]) => k === S.allocFilter)) S.allocFilter = admin && S.allocs.some((a) => a.Status === 'REQUESTED') ? 'requests' : 'current';
+  $('#avFilters').innerHTML = filters.map(([k, label, fn]) => {
+    const n = S.allocs.filter(fn).length;
+    return '<button type="button" class="btn btn-sm ' + (S.allocFilter === k ? 'btn-primary' : 'btn-outline-secondary') + '" data-action="alloc-filter" data-id="' + k + '">' + label +
+      ((k === 'requests' || k === 'returns') && n ? '<span class="badge rounded-pill text-bg-warning">' + n + '</span>' : (k === 'current' || k === 'all') && n ? '<span class="badge rounded-pill text-bg-light border text-dark">' + n + '</span>' : '') + '</button>';
+  }).join('');
+  if (admin) fillAllocRoomFilter();
+  const words = admin ? $('#avSearch').value.toLowerCase().split(/\s+/).filter(Boolean) : [];
+  const room = admin ? $('#avRoom').value : '', group = admin ? $('#avGroup').value : '';
+  const fn = filters.find(([k]) => k === S.allocFilter)[2];
+  const list = S.allocs.filter((a) => fn(a) &&
+    (!room || (room === NO_ROOM ? !allocRoom(a) : allocRoom(a) === room)) &&
+    words.every((w) => [a.AllocID, a.ItemID, a.ItemName, a.Username, a.FullName, a.Note, a.Purpose, allocRoom(a)].join(' ').toLowerCase().indexOf(w) >= 0));
+  $('#avInfo').textContent = admin && (words.length || room) ? 'Showing ' + list.length + ' of ' + S.allocs.filter(fn).length : '';
+  if (!list.length) {
+    const msg = admin
+      ? ({ requests: 'No allocation requests waiting.', returns: 'No returns waiting to be checked.', current: S.allocs.length ? 'Nothing matches.' : 'Nothing allocated yet. Click Allocate, or open an item → Allocate.' }[S.allocFilter] || 'Nothing to show.')
+      : (S.allocFilter === 'current' ? 'No devices are allocated to you right now.' : 'No history yet.');
+    $('#avList').innerHTML = '<div class="card soft-card"><div class="empty"><i class="bi bi-pc-display"></i>' + esc(msg) + '</div></div>';
+    return;
+  }
+  const cards = (arr) => '<div class="row g-3 mb-3">' + arr.map((a) => allocCard(a, words)).join('') + '</div>';
+  if (group) {
+    const groups = {};
+    list.forEach((a) => {
+      const key = group === 'person' ? a.Username : (allocRoom(a) || NO_ROOM);
+      (groups[key] = groups[key] || []).push(a);
+    });
+    const order = Object.keys(groups).sort((x, y) => {
+      if (group === 'room') { if (x === NO_ROOM) return 1; if (y === NO_ROOM) return -1; const ix = CFG.rooms.indexOf(x), iy = CFG.rooms.indexOf(y); if (ix >= 0 || iy >= 0) return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy); return x.localeCompare(y); }
+      return String(groups[x][0].FullName).localeCompare(String(groups[y][0].FullName));
+    });
+    $('#avList').innerHTML = order.map((k) => {
+      const arr = groups[k], units = arr.reduce((n, a) => n + a.Qty, 0);
+      const head = group === 'person'
+        ? '<i class="bi bi-person me-2 text-brand"></i>' + hl(arr[0].FullName, words) + ' <span class="text-muted small fw-normal">@' + hl(k, words) + '</span>'
+        : '<i class="bi bi-door-closed me-2 text-brand"></i>' + (k === NO_ROOM ? 'Room not set' : hl(k, words));
+      return '<h6 class="fw-bold mt-2 mb-2 d-flex align-items-center gap-2 alloc-group">' + head +
+        ' <span class="badge text-bg-light border text-dark fw-normal">' + arr.length + ' allocation' + (arr.length === 1 ? '' : 's') + ' · ' + units + ' unit' + (units === 1 ? '' : 's') + '</span></h6>' + cards(arr);
+    }).join('');
+  } else {
+    $('#avList').innerHTML = cards(list);
+  }
+}
+function allocCard(a, words) {
+  const admin = CAN.admin(), own = S.user && a.Username === S.user.Username;
+  let buttons = '';
+  if (a.Status === 'REQUESTED') {
+    if (admin) buttons = '<button class="btn btn-success btn-sm" data-action="alloc-approve" data-id="' + esc(a.AllocID) + '"><i class="bi bi-check-lg me-1"></i>Approve</button>' +
+                         '<button class="btn btn-outline-danger btn-sm" data-action="alloc-reject" data-id="' + esc(a.AllocID) + '"><i class="bi bi-x-lg me-1"></i>Reject</button>';
+    else if (own) buttons = '<button class="btn btn-outline-danger btn-sm" data-action="alloc-cancel" data-id="' + esc(a.AllocID) + '"><i class="bi bi-x-circle me-1"></i>Cancel request</button>';
+  } else if (a.Status === 'ACTIVE') {
+    if (admin) buttons = '<button class="btn btn-outline-primary btn-sm" data-action="end-alloc" data-id="' + esc(a.AllocID) + '"><i class="bi bi-box-arrow-in-down-left me-1"></i>End allocation</button>';
+    else if (own) buttons = '<button class="btn btn-outline-primary btn-sm" data-action="alloc-return" data-id="' + esc(a.AllocID) + '"><i class="bi bi-box-arrow-in-down-left me-1"></i>Request return</button>';
+  } else if (a.Status === 'RETURN_PENDING') {
+    if (admin) buttons = '<button class="btn btn-primary btn-sm" data-action="end-alloc" data-id="' + esc(a.AllocID) + '"><i class="bi bi-clipboard-check me-1"></i>Check &amp; accept return</button>';
+    else buttons = '<span class="small text-muted"><i class="bi bi-hourglass-split me-1"></i>The Admin will check it and close the allocation.</span>';
+  }
+  const room = allocRoom(a), it = S.items.find((x) => x.ItemID === a.ItemID);
+  return '<div class="col-md-6 col-xl-4"><div class="card req-card h-100"><div class="card-body d-flex flex-column">' +
+    '<div class="d-flex justify-content-between align-items-start gap-2 mb-1"><div class="small text-muted">' + hl(a.AllocID, words) + ' · ' + hl(a.ItemID, words) + '</div>' + allocBadge(a) + '</div>' +
+    '<h6 class="fw-bold mb-1"><a href="#" class="text-reset text-decoration-none" data-action="open-item" data-id="' + esc(a.ItemID) + '">' + a.Qty + ' × ' + hl(a.ItemName, words) + '</a></h6>' +
+    (admin ? '<div class="who mb-1"><i class="bi bi-person me-1"></i>' + hl(a.FullName, words) + ' <span class="text-muted">@' + hl(a.Username, words) + '</span></div>' : '') +
+    (room ? '<div class="small mb-1"><i class="bi bi-door-closed me-1"></i>' + hl(room, words) + '</div>' : '') +
+    (a.Purpose ? '<div class="small text-muted">' + hl(a.Purpose, words) + '</div>' : '') +
+    (a.Note ? '<div class="small text-muted fst-italic"><i class="bi bi-chat-left-text me-1"></i>' + hl(a.Note, words) + '</div>' : '') +
+    '<div class="small mt-1">' + (a.Status === 'REQUESTED' ? 'Requested ' + fmtDateTime(a.RequestedAt) : (a.AllocatedAt ? 'Since ' + fmtDate(a.AllocatedAt) + (admin && a.AllocatedBy ? ' <span class="text-muted">by ' + esc(a.AllocatedBy) + '</span>' : '') : '')) + '</div>' +
+    (a.Status === 'REQUESTED' && admin && it ? '<div class="small ' + (it.AvailableQty >= a.Qty ? 'text-success' : 'text-danger') + '">' + it.AvailableQty + ' available now</div>' : '') +
+    (a.ReturnReportedAt && a.Status === 'RETURN_PENDING' ? '<div class="small text-info-emphasis">Return requested ' + fmtDateTime(a.ReturnReportedAt) + '</div>' : '') +
+    (a.EndedAt ? '<div class="small text-muted">' + (a.Status === 'ENDED' ? 'Returned ' : 'Closed ') + fmtDate(a.EndedAt) + (admin ? ' by ' + esc(a.EndedBy) : '') + (a.EndNote ? ' — ' + esc(a.EndNote) : '') + '</div>' : '') +
+    (buttons ? '<div class="d-flex gap-2 mt-auto pt-3 align-items-center">' + buttons + '</div>' : '') +
+  '</div></div></div>';
+}
+async function cancelAllocRequest(id) {
+  const a = S.allocs.find((x) => x.AllocID === id); if (!a) return;
+  if (!(await confirmBox('Cancel this allocation request?', a.Qty + ' × ' + a.ItemName, 'Cancel request'))) return;
+  try { const r = await api('cancelAllocationRequest', id); replaceAlloc(r.allocation); renderAlloc(); toast('Request cancelled'); } catch (e) { fail(e); }
+}
+async function requestAllocReturn(id) {
+  const a = S.allocs.find((x) => x.AllocID === id); if (!a) return;
+  if (!(await confirmBox('Return ' + a.Qty + ' × ' + a.ItemName + '?', 'Hand it over to the Admin. The Admin will check it and close the allocation.', 'Yes, request return'))) return;
+  try { const r = await api('reportAllocationReturn', id); replaceAlloc(r.allocation); renderAlloc(); toast('Return requested. The Admin will check the item.'); } catch (e) { fail(e); }
 }
 async function openAllocate(itemId) {
   $('#allocForm').reset(); showErr('#alError', '');
@@ -1033,6 +1228,7 @@ async function openAllocate(itemId) {
   $('#alItem').innerHTML = '<option value="">Choose an item…</option>' + items.map((i) =>
     '<option value="' + esc(i.ItemID) + '">' + esc(i.Name) + ' (' + esc(i.ItemID) + ') — ' + i.AvailableQty + ' available</option>').join('');
   $('#alItem').value = itemId || '';
+  $('#alRoomIn').value = '';
   const users = S.users.filter((u) => u.Active).sort((a, b) => ROLE_ORDER[a.Role] - ROLE_ORDER[b.Role] || a.FullName.localeCompare(b.FullName));
   $('#alUser').innerHTML = '<option value="">Choose a person…</option>' + users.map((u) =>
     '<option value="' + esc(u.Username) + '">' + esc(u.FullName) + ' (@' + esc(u.Username) + ') — ' + esc((CFG.roles || {})[u.Role] || u.Role) + '</option>').join('');
@@ -1042,6 +1238,7 @@ async function openAllocate(itemId) {
 function allocHelp() {
   const it = S.items.find((x) => x.ItemID === $('#alItem').value);
   $('#alQty').max = it ? it.AvailableQty : 1;
+  if (it && !$('#alRoomIn').dataset.touched) $('#alRoomIn').value = it.Room || '';
   $('#alHelp').textContent = it ? it.AvailableQty + ' of ' + it.TotalQty + ' available' + (it.Room ? ' · ' + it.Room : '') + '. Allocated units are taken out of the available stock until the allocation ends.' : '';
 }
 async function submitAllocate(e) {
@@ -1049,45 +1246,44 @@ async function submitAllocate(e) {
   if (!$('#alItem').value || !$('#alUser').value) return showErr('#alError', 'Choose the item and the person.');
   const btn = $('#alSubmit'); btn.disabled = true;
   try {
-    const r = await api('allocateItem', $('#alItem').value, $('#alUser').value, Number($('#alQty').value), $('#alNote').value);
-    upsertItem(r.item); S.allocs.unshift(r.allocation);
-    modal('allocModal').hide();
-    if (S.view === 'admin' && S.adminTab === 'allocations') renderAllocations(); else if (S.view === 'inventory') renderInventory();
+    const r = await api('allocateItem', $('#alItem').value, $('#alUser').value, Number($('#alQty').value), $('#alNote').value, $('#alRoomIn').value);
+    upsertItem(r.item); replaceAlloc(r.allocation);
+    modal('allocModal').hide(); renderCurrent();
     toast('Allocated ' + r.allocation.Qty + ' × ' + r.allocation.ItemName + ' to ' + r.allocation.FullName);
   } catch (err) { showErr('#alError', err.message); }
   finally { btn.disabled = false; }
 }
-async function loadOverview() {
-  try {
-    const [ov, loans] = await Promise.all([api('getAdminOverview'), api('listLoans', 'all')]);
-    S.overview = ov; S.allLoans = loans;
-    const open = loans.filter((l) => l.Status === 'OPEN' || l.Status === 'RETURN_PENDING'), overdue = open.filter(isOverdue);
-    const waiting = loans.filter((l) => l.Status === 'REQUESTED').length + loans.filter((l) => l.Status === 'RETURN_PENDING').length;
-    const units = S.items.reduce((a, i) => a + i.TotalQty, 0);
-    const low = S.items.filter((i) => isLow(i) || i.AvailableQty <= 0);
-    const stat = (icon, color, v, l, view) => '<div class="col-6 col-md-4 col-xl"><div class="card stat h-100"' + (view ? ' role="button" data-action="nav" data-view="' + view + '"' : '') + '><div class="card-body"><i class="bi ' + icon + ' text-' + color + '"></i><div class="v mt-1">' + v + '</div><div class="l">' + l + '</div></div></div></div>';
-    $('#tab-overview').innerHTML =
-      '<div class="row g-3 mb-4">' +
-        stat('bi-box-seam', 'primary', S.items.length, 'Item types') + stat('bi-stack', 'info', units, 'Total units') +
-        stat('bi-inbox', 'warning', waiting, 'Waiting', 'requests') + stat('bi-clipboard-check', 'success', open.length, 'Out on loan', 'requests') +
-        stat('bi-alarm', 'danger', overdue.length, 'Overdue', 'requests') + stat('bi-person-workspace', 'primary', ov.allocatedUnits || 0, 'Allocated units') + stat('bi-people', 'secondary', ov.activeUsers, 'Active users') +
-      '</div>' +
-      '<div class="row g-3">' +
-        '<div class="col-lg-7"><div class="card soft-card h-100"><div class="card-body"><h6 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Low / out of stock</h6>' +
-          (low.length ? '<ul class="list-group list-group-flush">' + low.map((i) => '<li class="list-group-item px-0 d-flex justify-content-between align-items-center" role="button" data-action="open-item" data-id="' + esc(i.ItemID) + '"><span>' + esc(i.Name) + ' <span class="text-muted small">' + esc(i.ItemID) + '</span></span>' + stockBadge(i) + '</li>').join('') + '</ul>'
-            : '<p class="text-muted small mb-0">All items are above their low-stock level.</p>') +
-        '</div></div></div>' +
-        '<div class="col-lg-5"><div class="card soft-card h-100"><div class="card-body"><h6 class="fw-bold mb-3"><i class="bi bi-database me-2 text-brand"></i>Data & backup</h6>' +
-          '<div class="d-grid gap-2 mb-3">' +
-            '<a class="btn btn-outline-primary text-start" href="' + esc(safeUrl(ov.sheetUrl)) + '" target="_blank" rel="noopener"><i class="bi bi-table me-2"></i>Open database (Google Sheet)</a>' +
-            '<a class="btn btn-outline-primary text-start" href="' + esc(safeUrl(ov.folderUrl)) + '" target="_blank" rel="noopener"><i class="bi bi-folder2-open me-2"></i>Open Drive folder (images & backups)</a>' +
-          '</div>' +
-          '<div class="small">Weekly backup: ' + (ov.backupEnabled ? '<span class="text-success fw-semibold">On</span> (every Friday)' : '<span class="text-danger fw-semibold">Off</span> — run setup() again') + '</div>' +
-          '<div class="small text-muted">Last backup: ' + (ov.lastBackup ? fmtDateTime(ov.lastBackup) : 'not yet') + '</div>' +
-          '<div class="small text-muted mt-2">To export: open the Sheet → File → Download → Excel/CSV.</div>' +
-        '</div></div></div>' +
-      '</div>';
-  } catch (e) { fail(e); }
+function renderOverview() {
+  const ov = S.overview || {}, loans = S.allLoans;
+  const open = loans.filter((l) => l.Status === 'OPEN' || l.Status === 'RETURN_PENDING'), overdue = open.filter(isOverdue);
+  const waiting = loans.filter((l) => l.Status === 'REQUESTED' || l.Status === 'RETURN_PENDING').length;
+  const allocUnits = S.allocs.filter((a) => a.Status === 'ACTIVE' || a.Status === 'RETURN_PENDING').reduce((n, a) => n + a.Qty, 0);
+  const units = S.items.reduce((a, i) => a + i.TotalQty, 0);
+  const low = S.items.filter((i) => isLow(i) || i.AvailableQty <= 0);
+  const stat = (icon, color, v, l, view) => '<div class="col-6 col-md-4 col-xl"><div class="card stat h-100"' + (view ? ' role="button" data-action="nav" data-view="' + view + '"' : '') + '><div class="card-body"><i class="bi ' + icon + ' text-' + color + '"></i><div class="v mt-1">' + v + '</div><div class="l">' + l + '</div></div></div></div>';
+  const later = (v) => (v == null ? '<span class="text-muted">…</span>' : v);
+  $('#tab-overview').innerHTML =
+    '<div class="row g-3 mb-4">' +
+      stat('bi-box-seam', 'primary', S.items.length, 'Item types') + stat('bi-stack', 'info', units, 'Total units') +
+      stat('bi-inbox', 'warning', waiting, 'Waiting', 'requests') + stat('bi-clipboard-check', 'success', open.length, 'Out on loan', 'requests') +
+      stat('bi-alarm', 'danger', overdue.length, 'Overdue', 'requests') + stat('bi-pc-display', 'primary', allocUnits, 'Allocated units', 'alloc') + stat('bi-people', 'secondary', later(ov.activeUsers), 'Active users') +
+    '</div>' +
+    '<div class="row g-3">' +
+      '<div class="col-lg-7"><div class="card soft-card h-100"><div class="card-body"><h6 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Low / out of stock</h6>' +
+        (low.length ? '<ul class="list-group list-group-flush">' + low.map((i) => '<li class="list-group-item px-0 d-flex justify-content-between align-items-center" role="button" data-action="open-item" data-id="' + esc(i.ItemID) + '"><span>' + esc(i.Name) + ' <span class="text-muted small">' + esc(i.ItemID) + '</span></span>' + stockBadge(i) + '</li>').join('') + '</ul>'
+          : '<p class="text-muted small mb-0">All items are above their low-stock level.</p>') +
+      '</div></div></div>' +
+      '<div class="col-lg-5"><div class="card soft-card h-100"><div class="card-body"><h6 class="fw-bold mb-3"><i class="bi bi-database me-2 text-brand"></i>Data & backup</h6>' +
+        (ov.sheetUrl ? '<div class="d-grid gap-2 mb-3">' +
+          '<a class="btn btn-outline-primary text-start" href="' + esc(safeUrl(ov.sheetUrl)) + '" target="_blank" rel="noopener"><i class="bi bi-table me-2"></i>Open database (Google Sheet)</a>' +
+          '<a class="btn btn-outline-primary text-start" href="' + esc(safeUrl(ov.folderUrl)) + '" target="_blank" rel="noopener"><i class="bi bi-folder2-open me-2"></i>Open Drive folder (images & backups)</a>' +
+        '</div>' +
+        '<div class="small">Weekly backup: ' + (ov.backupEnabled ? '<span class="text-success fw-semibold">On</span> (every Friday)' : '<span class="text-danger fw-semibold">Off</span> — run setup() again') + '</div>' +
+        '<div class="small text-muted">Last backup: ' + (ov.lastBackup ? fmtDateTime(ov.lastBackup) : 'not yet') + '</div>' +
+        '<div class="small text-muted mt-2">To export: open the Sheet → File → Download → Excel/CSV.</div>'
+          : '<div class="small text-muted">Loading…</div>') +
+      '</div></div></div>' +
+    '</div>';
 }
 
 // ---------- users ----------
@@ -1233,6 +1429,12 @@ const ACTIONS = {
   'return-loan': (id) => reportReturn(id),
   'cancel-request': (id) => cancelRequest(id),
   'refresh-requests': loadRequests,
+  'refresh-alloc': () => sync(true),
+  'alloc-filter': (id) => { S.allocFilter = id; renderAlloc(); },
+  'alloc-approve': (id) => openDecide(id, true, 'alloc'),
+  'alloc-reject': (id) => openDecide(id, false, 'alloc'),
+  'alloc-cancel': (id) => cancelAllocRequest(id),
+  'alloc-return': (id) => requestAllocReturn(id),
   'req-filter': (id) => { S.reqFilter = id; renderRequests(); },
   'approve-req': (id) => openDecide(id, true),
   'reject-req': (id) => openDecide(id, false),
@@ -1278,8 +1480,11 @@ $('#fSearch').addEventListener('input', renderInventory);
 $('#aUserSearch').addEventListener('input', renderUsers);
 $('#allocForm').addEventListener('submit', submitAllocate);
 $('#alItem').addEventListener('change', allocHelp);
-$('#aAllocFilter').addEventListener('change', renderAllocations);
-$('#aAllocSearch').addEventListener('input', renderAllocations);
+$('#avSearch').addEventListener('input', renderAlloc);
+$('#avRoom').addEventListener('change', renderAlloc);
+$('#avGroup').addEventListener('change', renderAlloc);
+$('#alRoomIn').addEventListener('input', () => { $('#alRoomIn').dataset.touched = '1'; });
+$('#allocModal').addEventListener('show.bs.modal', () => { delete $('#alRoomIn').dataset.touched; });
 $('#aLogSearch').addEventListener('input', renderLog);
 
 // =====================================================================
@@ -1294,7 +1499,7 @@ $('#aLogSearch').addEventListener('input', renderLog);
   const saved = store.get('riot_token');
   if (saved) {
     S.token = saved;
-    loadApp().catch((e) => { if (e.message !== 'Session expired') endSession(e.message); });
+    if (!startFromCache()) loadApp().catch((e) => { if (e.message !== 'Session expired') endSession(e.message); });
   } else {
     showLogin('');
   }
