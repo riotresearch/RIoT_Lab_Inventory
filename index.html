@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RIoT Center Inventory</title>
+  <meta name="theme-color" content="#0b4f8a">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b4f8a'/%3E%3Crect x='18' y='18' width='28' height='28' rx='4' fill='none' stroke='white' stroke-width='4'/%3E%3Cpath d='M26 10v8M38 10v8M26 46v8M38 46v8M10 26h8M10 38h8M46 26h8M46 38h8' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand:#0b4f8a; --brand-2:#0d7c8c; --bg:#f3f6fa; --ink:#1d2939; }
+    body { background:var(--bg); color:var(--ink); font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; }
+    .btn-primary { --bs-btn-bg:var(--brand); --bs-btn-border-color:var(--brand); --bs-btn-hover-bg:#093f6e; --bs-btn-hover-border-color:#093f6e; --bs-btn-active-bg:#08365e; --bs-btn-active-border-color:#08365e; --bs-btn-disabled-bg:var(--brand); --bs-btn-disabled-border-color:var(--brand); }
+    .btn-outline-primary { --bs-btn-color:var(--brand); --bs-btn-border-color:var(--brand); --bs-btn-hover-bg:var(--brand); --bs-btn-hover-border-color:var(--brand); --bs-btn-active-bg:var(--brand); --bs-btn-active-border-color:var(--brand); }
+    .text-brand { color:var(--brand) !important; }
+    a { color:var(--brand); }
+
+    /* Login */
+    .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px;
+      background: radial-gradient(circle at 20% 20%, rgba(255,255,255,.12), transparent 40%),
+                  linear-gradient(135deg, var(--brand), var(--brand-2)); }
+    .login-card { max-width:410px; width:100%; border:0; border-radius:18px; box-shadow:0 24px 60px rgba(0,0,0,.28); }
+    .brand-mark { width:60px; height:60px; border-radius:16px; color:#fff; font-size:30px;
+      display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,var(--brand),var(--brand-2)); }
+
+    /* Navbar */
+    .app-nav { background:linear-gradient(90deg, var(--brand), var(--brand-2)); }
+    .app-nav .navbar-brand { line-height:1.1; }
+    .app-nav .navbar-brand small { display:block; font-size:.68rem; font-weight:400; opacity:.85; }
+    .app-nav .nav-link { color:rgba(255,255,255,.82); border-radius:8px; padding:.45rem .8rem !important; }
+    .app-nav .nav-link:hover { color:#fff; background:rgba(255,255,255,.1); }
+    .app-nav .nav-link.active { color:#fff; background:rgba(255,255,255,.18); font-weight:600; }
+
+    /* Cards */
+    .soft-card { border:0; border-radius:14px; box-shadow:0 1px 3px rgba(16,24,40,.08); }
+    .item-card { cursor:pointer; border:0; border-radius:14px; overflow:hidden; box-shadow:0 1px 3px rgba(16,24,40,.08); transition:transform .12s, box-shadow .12s; }
+    .item-card:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(16,24,40,.12); }
+    .item-img { aspect-ratio:4/3; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; border-bottom:1px solid #eef1f5; }
+    .item-img img { width:100%; height:100%; object-fit:contain; }
+    .item-img .ph, .detail-ph { color:#a3b1c2; }
+    .item-img .ph { font-size:2.6rem; }
+    .clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:2.5em; }
+    .detail-img-wrap { background:#fff; border:1px solid #eef1f5; border-radius:12px; display:flex; align-items:center; justify-content:center; min-height:220px; overflow:hidden; }
+    .detail-img-wrap img { width:100%; max-height:340px; object-fit:contain; }
+    .detail-ph { font-size:4rem; }
+    .stat { border:0; border-radius:14px; box-shadow:0 1px 3px rgba(16,24,40,.08); }
+    .stat .v { font-size:1.6rem; font-weight:700; line-height:1.1; }
+    .stat .l { font-size:.8rem; color:#667085; }
+    .stat i { font-size:1.4rem; }
+    .kv th { width:38%; color:#667085; font-weight:500; }
+    .pre-wrap { white-space:pre-wrap; word-break:break-word; }
+    .table > :not(caption) > * > * { vertical-align:middle; }
+    .table-card { border:0; border-radius:14px; box-shadow:0 1px 3px rgba(16,24,40,.08); overflow:hidden; }
+    .table-card .table { margin:0; }
+    .empty { text-align:center; color:#98a2b3; padding:48px 16px; }
+    .empty i { font-size:2.6rem; display:block; margin-bottom:8px; }
+    .img-preview { width:100%; aspect-ratio:4/3; background:#f8fafc; border:1px dashed #cfd8e3; border-radius:12px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+    .img-preview img { width:100%; height:100%; object-fit:contain; }
+    .cred-box { font-family:ui-monospace,Consolas,monospace; background:#f8fafc; border:1px solid #e4e7ec; border-radius:10px; padding:12px; white-space:pre; }
+
+    /* Busy overlay */
+    #busy { position:fixed; inset:0; background:rgba(243,246,250,.55); z-index:3000; display:none; align-items:center; justify-content:center; }
+    #busy.show { display:flex; }
+    .toast-container { z-index:3100; }
+    .tabs-scroll { overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+    .tabs-scroll::-webkit-scrollbar { display:none; }
+    .nav-tabs .nav-link { color:#475467; white-space:nowrap; }
+    .nav-tabs .nav-link.active { color:var(--brand); font-weight:600; }
+    footer.app-foot { color:#98a2b3; font-size:.8rem; }
+    .credit { color:#98a2b3; font-size:.75rem; font-weight:400; }
+    .credit a { color:inherit; text-decoration:underline; text-underline-offset:2px; }
+    .credit a:hover { color:var(--brand); }
+    .login-credit { color:rgba(255,255,255,.75); }
+    .login-credit a:hover { color:#fff; }
+
+    /* Category chips */
+    .chips { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:thin; }
+    .chip { flex:0 0 auto; border:1px solid #d0d5dd; background:#fff; color:#344054; border-radius:999px; padding:.3rem .8rem; font-size:.85rem; white-space:nowrap; }
+    .chip:hover { border-color:var(--brand); color:var(--brand); }
+    .chip.active { background:var(--brand); border-color:var(--brand); color:#fff; }
+    .chip .n { opacity:.65; margin-left:4px; font-size:.78rem; }
+    .chip.active .n { opacity:.85; }
+    .chip:disabled { opacity:.45; }
+
+    /* List view */
+    .list-thumb { width:48px; height:48px; border-radius:8px; background:#fff; border:1px solid #eef1f5; display:flex; align-items:center; justify-content:center; overflow:hidden; flex:0 0 auto; }
+    .list-thumb img { width:100%; height:100%; object-fit:contain; }
+    .list-thumb .ph { font-size:1.3rem; }
+    .list-row { cursor:pointer; }
+    mark { padding:0 1px; background:#fff3b0; border-radius:2px; }
+  </style>
+</head>
+<body>
+
+<div id="busy"><div class="spinner-border text-primary" role="status" style="width:3rem;height:3rem"></div></div>
+<div class="toast-container position-fixed top-0 end-0 p-3" id="toasts"></div>
+
+<!-- ======================= LOGIN ======================= -->
+<section id="loginView" class="login-wrap position-relative d-none" style="padding-bottom:56px">
+  <div class="card login-card">
+    <div class="card-body p-4 p-sm-5">
+      <div class="d-flex align-items-center gap-3 mb-4">
+        <div class="brand-mark"><i class="bi bi-cpu"></i></div>
+        <div>
+          <h4 class="mb-0 fw-bold" id="loginLab"></h4>
+          <div class="text-muted small" id="loginOrg"></div>
+        </div>
+      </div>
+      <h5 class="fw-semibold mb-1">Lab Inventory</h5>
+      <p class="text-muted small mb-4">Sign in with the account given by the lab admin.</p>
+      <div id="loginAlert" class="alert alert-danger py-2 small d-none"></div>
+      <form id="loginForm" autocomplete="on">
+        <div class="mb-3">
+          <label class="form-label small fw-medium" for="loginUser">Username</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-person"></i></span>
+            <input class="form-control" id="loginUser" autocomplete="username" autocapitalize="none" required>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="form-label small fw-medium" for="loginPass">Password</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+            <input class="form-control" id="loginPass" type="password" autocomplete="current-password" required>
+            <button class="btn btn-outline-secondary" type="button" data-action="toggle-pass" data-target="loginPass" aria-label="Show password"><i class="bi bi-eye"></i></button>
+          </div>
+        </div>
+        <button class="btn btn-primary w-100 py-2 fw-semibold" type="submit" id="loginBtn">Sign in</button>
+      </form>
+      <p class="text-muted small text-center mt-4 mb-0">No account? Contact the lab administrator.</p>
+    </div>
+  </div>
+  <div class="credit login-credit position-absolute bottom-0 start-0 end-0 text-center pb-3 credit-line"></div>
+</section>
+
+<!-- ======================= APP ======================= -->
+<section id="appView" class="d-none">
+  <nav class="navbar navbar-expand-md navbar-dark app-nav sticky-top shadow-sm">
+    <div class="container-xl">
+      <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="#" data-action="nav" data-view="inventory">
+        <i class="bi bi-cpu fs-4"></i>
+        <span><span id="navLab"></span><small id="navOrg"></small></span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-label="Menu">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="mainNav">
+        <ul class="navbar-nav me-auto ms-md-3 gap-1">
+          <li class="nav-item"><a class="nav-link" href="#" data-action="nav" data-view="inventory"><i class="bi bi-grid me-1"></i>Inventory</a></li>
+          <li class="nav-item" data-perm="borrow"><a class="nav-link" href="#" data-action="nav" data-view="loans"><i class="bi bi-bag-check me-1"></i>My Items</a></li>
+          <li class="nav-item" data-perm="admin"><a class="nav-link" href="#" data-action="nav" data-view="admin"><i class="bi bi-shield-lock me-1"></i>Admin</a></li>
+        </ul>
+        <div class="dropdown">
+          <button class="btn btn-sm btn-light dropdown-toggle d-flex align-items-center gap-2" data-bs-toggle="dropdown">
+            <i class="bi bi-person-circle"></i><span id="navUser"></span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><h6 class="dropdown-header" id="navUserRole"></h6></li>
+            <li><a class="dropdown-item" href="#" data-action="change-pass"><i class="bi bi-key me-2"></i>Change password</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item text-danger" href="#" data-action="logout"><i class="bi bi-box-arrow-right me-2"></i>Sign out</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container-xl py-3 py-md-4">
+
+    <!-- ---------- INVENTORY ---------- -->
+    <div id="view-inventory" class="app-view">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+          <h4 class="fw-bold mb-0">Inventory</h4>
+          <div class="text-muted small" id="invSummary"></div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" data-action="refresh"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-sm-inline ms-1">Refresh</span></button>
+          <button class="btn btn-primary btn-sm" data-perm="addItem" data-action="add-item"><i class="bi bi-plus-lg me-1"></i>Add item</button>
+        </div>
+      </div>
+      <div class="card soft-card mb-3">
+        <div class="card-body p-2 p-md-3">
+          <div class="row g-2 mb-2">
+            <div class="col-12 col-md-6">
+              <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input class="form-control" id="fSearch" type="search" placeholder="Search name, description, category, ID, location…" autocomplete="off">
+              </div>
+            </div>
+            <div class="col-6 col-md-2">
+              <select class="form-select" id="fStock" aria-label="Stock filter">
+                <option value="">All stock</option>
+                <option value="avail">Available</option>
+                <option value="low">Low stock</option>
+                <option value="out">Out of stock</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-2">
+              <select class="form-select" id="fSort" aria-label="Sort">
+                <option value="name">Name A–Z</option>
+                <option value="recent">Recently updated</option>
+                <option value="avail">Least available</option>
+                <option value="id">Item ID</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-2">
+              <div class="btn-group w-100" role="group" aria-label="View">
+                <button class="btn btn-outline-secondary" data-action="set-layout" data-layout="grid" title="Grid view"><i class="bi bi-grid-3x3-gap"></i></button>
+                <button class="btn btn-outline-secondary" data-action="set-layout" data-layout="list" title="List view"><i class="bi bi-list-ul"></i></button>
+              </div>
+            </div>
+          </div>
+          <div class="chips" id="catChips"></div>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-2 small text-muted">
+        <span id="resultInfo"></span>
+        <a href="#" class="d-none" id="clearFilters" data-action="clear-filters"><i class="bi bi-x-circle me-1"></i>Clear filters</a>
+      </div>
+      <div id="itemGrid"></div>
+    </div>
+
+    <!-- ---------- MY ITEMS ---------- -->
+    <div id="view-loans" class="app-view d-none">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+          <h4 class="fw-bold mb-0">My Items</h4>
+          <div class="text-muted small">Items you have taken out of the lab</div>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" data-action="refresh-myloans"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <h6 class="fw-semibold text-muted text-uppercase small mb-2">Currently with me</h6>
+      <div id="myOpenLoans" class="mb-4"></div>
+      <h6 class="fw-semibold text-muted text-uppercase small mb-2">History</h6>
+      <div id="myLoanHistory"></div>
+    </div>
+
+    <!-- ---------- ADMIN ---------- -->
+    <div id="view-admin" class="app-view d-none">
+      <h4 class="fw-bold mb-3">Admin Panel</h4>
+      <ul class="nav nav-tabs mb-3 flex-nowrap tabs-scroll" id="adminTabs">
+        <li class="nav-item"><a class="nav-link active" href="#" data-action="admin-tab" data-tab="overview">Overview</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-action="admin-tab" data-tab="loans">Loans</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-action="admin-tab" data-tab="users">Users</a></li>
+        <li class="nav-item"><a class="nav-link text-nowrap" href="#" data-action="admin-tab" data-tab="log">Activity log</a></li>
+      </ul>
+
+      <div id="tab-overview" class="admin-tab"></div>
+
+      <div id="tab-loans" class="admin-tab d-none">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <select class="form-select w-auto" id="aLoanFilter">
+            <option value="open">Open loans</option>
+            <option value="overdue">Overdue</option>
+            <option value="closed">Closed</option>
+            <option value="all">All</option>
+          </select>
+          <input class="form-control" style="max-width:320px" id="aLoanSearch" placeholder="Search user, item, purpose…">
+          <button class="btn btn-outline-secondary ms-auto" data-action="admin-tab" data-tab="loans"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div id="aLoans"></div>
+      </div>
+
+      <div id="tab-users" class="admin-tab d-none">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <input class="form-control" style="max-width:320px" id="aUserSearch" placeholder="Search users…">
+          <button class="btn btn-primary ms-auto" data-action="add-user"><i class="bi bi-person-plus me-1"></i>Add user</button>
+        </div>
+        <div id="aUsers"></div>
+      </div>
+
+      <div id="tab-log" class="admin-tab d-none">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <input class="form-control" style="max-width:320px" id="aLogSearch" placeholder="Filter log…">
+          <button class="btn btn-outline-secondary ms-auto" data-action="admin-tab" data-tab="log"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div id="aLog"></div>
+      </div>
+    </div>
+
+    <footer class="app-foot text-center mt-5 mb-2">
+      <div id="footer"></div>
+      <div class="credit credit-line mt-1"></div>
+    </footer>
+  </main>
+</section>
+
+<!-- ======================= MODALS ======================= -->
+
+<!-- Item detail -->
+<div class="modal fade" id="itemModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <div class="small text-muted" id="imId"></div>
+          <h5 class="modal-title fw-bold" id="imName"></h5>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="imBody"></div>
+      <div class="modal-footer justify-content-between" id="imFooter">
+        <button class="btn btn-outline-danger" data-perm="deleteItem" data-action="delete-item" id="imDelete"><i class="bi bi-trash me-1"></i>Delete</button>
+        <button class="btn btn-primary ms-auto" data-perm="editItem" data-action="edit-item" id="imEdit"><i class="bi bi-pencil me-1"></i>Edit item</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Item add/edit form -->
+<div class="modal fade" id="itemFormModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+    <form class="modal-content" id="itemForm" novalidate>
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="ifTitle">Add item</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ifId">
+        <div class="row g-3">
+          <div class="col-md-5">
+            <label class="form-label small fw-medium">Photo</label>
+            <div class="img-preview mb-2" id="ifPreview"><i class="bi bi-image text-secondary fs-1"></i></div>
+            <input type="file" class="form-control form-control-sm" id="ifImage" accept="image/*">
+            <div class="form-check mt-2 d-none" id="ifRemoveWrap">
+              <input class="form-check-input" type="checkbox" id="ifRemove">
+              <label class="form-check-label small" for="ifRemove">Remove current photo</label>
+            </div>
+            <div class="form-text">Photos are resized automatically before upload.</div>
+          </div>
+          <div class="col-md-7">
+            <div class="mb-3">
+              <label class="form-label small fw-medium">Item name *</label>
+              <input class="form-control" id="ifName" maxlength="200" required placeholder="e.g. DHT22 Temperature & Humidity Sensor">
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-7">
+                <label class="form-label small fw-medium">Category</label>
+                <input class="form-control" id="ifCategory" list="catList" maxlength="100" placeholder="Choose or type">
+                <datalist id="catList"></datalist>
+              </div>
+              <div class="col-5">
+                <label class="form-label small fw-medium">Condition</label>
+                <select class="form-select" id="ifCondition"></select>
+              </div>
+            </div>
+            <div class="row g-2 mb-1">
+              <div class="col-6">
+                <label class="form-label small fw-medium">Total quantity *</label>
+                <input class="form-control" id="ifTotal" type="number" min="0" step="1" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-medium">Low-stock alert at</label>
+                <input class="form-control" id="ifMin" type="number" min="0" step="1" placeholder="0 = off">
+              </div>
+            </div>
+            <div class="form-text mb-3" id="ifLoanNote"></div>
+            <div class="row g-2">
+              <div class="col-7">
+                <label class="form-label small fw-medium">Storage location</label>
+                <input class="form-control" id="ifLocation" maxlength="200" placeholder="e.g. Cabinet A, Drawer 3">
+              </div>
+              <div class="col-5">
+                <label class="form-label small fw-medium">Purchase date</label>
+                <input class="form-control" id="ifPurchase" type="date">
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-medium">Details / specifications</label>
+            <textarea class="form-control" id="ifDetails" rows="4" maxlength="5000" placeholder="Model, voltage, interface, notes…"></textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-medium">Datasheet / product link</label>
+            <input class="form-control" id="ifLink" type="url" maxlength="1000" placeholder="https://…">
+          </div>
+        </div>
+        <div id="ifError" class="alert alert-danger py-2 small mt-3 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="ifSave"><i class="bi bi-check2 me-1"></i>Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Close loan (admin) -->
+<div class="modal fade" id="closeLoanModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <form class="modal-content" id="closeLoanForm">
+      <div class="modal-header"><h5 class="modal-title fw-bold">Close loan</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="clId">
+        <p class="mb-3" id="clInfo"></p>
+        <label class="form-label small fw-medium">Quantity returned to the lab</label>
+        <input class="form-control" type="number" min="0" step="1" id="clQty" required>
+        <div class="form-text mb-3">Anything not returned is counted as <b>consumed / lost</b> and removed from the item's total.</div>
+        <label class="form-label small fw-medium">Note (optional)</label>
+        <input class="form-control" id="clNote" maxlength="300" placeholder="e.g. 2 burnt during project">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Close loan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- User add/edit -->
+<div class="modal fade" id="userModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <form class="modal-content" id="userForm">
+      <div class="modal-header"><h5 class="modal-title fw-bold" id="ufTitle">Add user</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="ufMode">
+        <div class="mb-3">
+          <label class="form-label small fw-medium">Username *</label>
+          <input class="form-control" id="ufUsername" maxlength="30" autocapitalize="none" placeholder="e.g. 2130456 or rahim.k" required>
+          <div class="form-text">3–30 characters: letters, numbers, dot, dash, underscore.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-medium">Full name *</label>
+          <input class="form-control" id="ufFullName" maxlength="100" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-medium">Contact (phone / email / student ID)</label>
+          <input class="form-control" id="ufContact" maxlength="150">
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label small fw-medium">User type</label>
+            <select class="form-select" id="ufRole">
+              <option value="student">Student</option>
+              <option value="ra">RA</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="col-6 d-flex align-items-end" id="ufActiveWrap">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="ufActive">
+              <label class="form-check-label" for="ufActive">Active</label>
+            </div>
+          </div>
+        </div>
+        <div class="form-text mb-3 mt-n2" id="ufRoleHelp"></div>
+        <div id="ufPassWrap">
+          <label class="form-label small fw-medium">Password *</label>
+          <div class="input-group">
+            <input class="form-control" id="ufPassword" minlength="6" maxlength="100">
+            <button class="btn btn-outline-secondary" type="button" data-action="gen-pass" data-target="ufPassword"><i class="bi bi-magic me-1"></i>Generate</button>
+          </div>
+        </div>
+        <div id="ufError" class="alert alert-danger py-2 small mt-3 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Password (change own / reset other) -->
+<div class="modal fade" id="pwModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <form class="modal-content" id="pwForm">
+      <div class="modal-header"><h5 class="modal-title fw-bold" id="pwTitle">Change password</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="pwMode"><input type="hidden" id="pwUser">
+        <div class="mb-3" id="pwCurrentWrap">
+          <label class="form-label small fw-medium">Current password</label>
+          <input class="form-control" type="password" id="pwCurrent" autocomplete="current-password">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-medium">New password (min 6 characters)</label>
+          <div class="input-group">
+            <input class="form-control" type="password" id="pwNew" minlength="6" maxlength="100" autocomplete="new-password" required>
+            <button class="btn btn-outline-secondary" type="button" data-action="toggle-pass" data-target="pwNew"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-outline-secondary d-none" type="button" data-action="gen-pass" data-target="pwNew" id="pwGen"><i class="bi bi-magic"></i></button>
+          </div>
+        </div>
+        <div class="mb-1" id="pwConfirmWrap">
+          <label class="form-label small fw-medium">Confirm new password</label>
+          <input class="form-control" type="password" id="pwConfirm" autocomplete="new-password">
+        </div>
+        <div id="pwError" class="alert alert-danger py-2 small mt-3 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save password</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Credentials display -->
+<div class="modal fade" id="credModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-check-circle text-success me-2"></i>Login details</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="small text-muted">Send these to the user. The password is not shown again.</p>
+        <div class="cred-box" id="credText"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-primary" data-action="copy-cred"><i class="bi bi-clipboard me-1"></i>Copy</button>
+        <button class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-body p-4">
+        <h6 class="fw-bold" id="cfTitle"></h6>
+        <p class="small text-muted mb-0" id="cfMsg"></p>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-light btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="cfOk">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* =====================================================================
+   RIoT Center Inventory — front end
+   ===================================================================== */
+/* ---------------------------------------------------------------------
+   SERVER LINK — only needed when this page is hosted OUTSIDE Google
+   (GitHub Pages etc.). Paste your Apps Script Web app URL (ends in /exec).
+   Inside Apps Script this value is ignored.
+   --------------------------------------------------------------------- */
+const API_URL = 'https://script.google.com/macros/s/AKfycbxsW_v19SkMVE3wH6y2OumhT54-cVhAuQUKi1DIpLgDnEqSfIrI8QFfHzC-90RNNifk/exec';
+
+let CFG = {   // defaults; the server's settings replace these after sign-in
+  labName: 'RIoT Center', orgName: 'Independent University, Bangladesh', appTitle: 'RIoT Center Inventory',
+  raCanEditItems: true, borrowRoles: ['admin', 'ra'], selfReturn: true,
+  roles: { student: 'Student', ra: 'Research Assistant (RA)', admin: 'Admin' },
+  creditName: 'JH Rony', creditUrl: 'https://rony-cse.github.io/',
+  categories: ['Sensors', 'Microcontrollers & Boards', 'Modules', 'Actuators & Motors', 'Power & Batteries',
+               'Communication & Networking', 'Displays', 'Passive Components', 'Cables & Connectors', 'Tools & Equipment', 'Other'],
+  conditions: ['New', 'Good', 'Fair', 'Needs repair', 'Damaged'],
+};
+const IN_APPS_SCRIPT = typeof google !== 'undefined' && !!(google.script && google.script.run);
+const S = { token: null, user: null, items: [], myLoans: [], allLoans: [], users: [], log: [], overview: null,
+            view: 'inventory', adminTab: 'overview', cat: '', layout: 'grid', currentItem: null, imgCache: {} };
+
+// ---------- small helpers ----------
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const modal = (id) => bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+};
+const role = () => (S.user ? S.user.Role : '');
+const isAdmin = () => role() === 'admin';
+/* What each user type may do (the server enforces the same rules). */
+const CAN = {
+  admin: () => role() === 'admin',
+  addItem: () => role() === 'admin' || role() === 'ra',
+  editItem: () => role() === 'admin' || (role() === 'ra' && CFG.raCanEditItems),
+  deleteItem: () => role() === 'admin',
+  borrow: () => (CFG.borrowRoles || []).indexOf(role()) >= 0,
+};
+function applyPerms(root) {
+  (root || document).querySelectorAll('[data-perm]').forEach((el) => {
+    const f = CAN[el.dataset.perm];
+    el.classList.toggle('d-none', !(f && f()));
+  });
+}
+const pad = (n) => String(n).padStart(2, '0');
+function todayStr() { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function fmtDate(s) {
+  if (!s) return '—';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
+  return isNaN(d) ? esc(s) : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+function fmtDateTime(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return isNaN(d) ? esc(s) : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+const isOverdue = (l) => l.Status === 'OPEN' && l.ExpectedReturn && l.ExpectedReturn < todayStr();
+const isLow = (it) => it.MinQty > 0 && it.AvailableQty <= it.MinQty && it.AvailableQty > 0;
+
+// ---------- server calls ----------
+let busyCount = 0, busyTimer = null;
+function busy(on) {
+  busyCount += on ? 1 : -1;
+  if (busyCount > 0 && !busyTimer) busyTimer = setTimeout(() => $('#busy').classList.add('show'), 250);
+  if (busyCount <= 0) { busyCount = 0; clearTimeout(busyTimer); busyTimer = null; $('#busy').classList.remove('show'); }
+}
+const apiConfigured = () => IN_APPS_SCRIPT || /^https:\/\/script\.google(usercontent)?\.com\//.test(API_URL);
+
+/** Low-level call: google.script.run inside Apps Script, otherwise fetch() to the /exec URL. */
+function call(fn, args) {
+  if (IN_APPS_SCRIPT) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve)
+        .withFailureHandler((err) => reject(new Error(String((err && err.message) || err).replace(/^(Error|Exception):\s*/i, ''))))[fn](...args);
+    });
+  }
+  if (!apiConfigured()) return Promise.reject(new Error('This website is not connected to the server yet. Set API_URL in index.html.'));
+  return fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // "simple" request: no CORS preflight
+    body: JSON.stringify({ fn: fn, args: args }),
+    redirect: 'follow',
+    credentials: 'omit',                                       // never send Google cookies -> no account conflicts
+  }).catch(() => { throw new Error('Cannot reach the server. Check your internet connection and try again.'); })
+    .then((res) => res.text())
+    .then((text) => {
+      let r;
+      try { r = JSON.parse(text); }
+      catch (e) { throw new Error('The server gave an unexpected reply. Check that the Apps Script deployment has "Who has access: Anyone" and that API_URL is the /exec link.'); }
+      if (!r.ok) throw new Error(String(r.error || 'Unknown error').replace(/^(Error|Exception):\s*/i, ''));
+      return r.data;
+    });
+}
+function run(fn, ...args) {
+  busy(true);
+  return call(fn, args).then(
+    (r) => { busy(false); return r; },
+    (err) => {
+      busy(false);
+      if (err.message.indexOf('SESSION_EXPIRED') >= 0) { endSession('Your session has expired. Please sign in again.'); throw new Error('Session expired'); }
+      throw err;
+    });
+}
+const api = (fn, ...args) => run(fn, S.token, ...args);
+function applyConfig(c) {
+  if (!c) return;
+  CFG = Object.assign({}, CFG, c);
+  document.title = CFG.appTitle;
+  $('#loginLab').textContent = CFG.labName; $('#loginOrg').textContent = CFG.orgName;
+  $('#navLab').textContent = CFG.labName; $('#navOrg').textContent = CFG.orgName;
+  $('#footer').textContent = CFG.labName + ' · ' + CFG.orgName + ' · Lab Inventory';
+  const credit = CFG.creditName
+    ? 'Developed by ' + (CFG.creditUrl ? '<a href="' + esc(CFG.creditUrl) + '" target="_blank" rel="noopener">' + esc(CFG.creditName) + '</a>' : esc(CFG.creditName))
+    : '';
+  $$('.credit-line').forEach((el) => { el.innerHTML = credit; });
+}
+
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast align-items-center border-0 text-bg-' + (type || 'success');
+  el.innerHTML = '<div class="d-flex"><div class="toast-body">' + esc(msg) + '</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>';
+  $('#toasts').appendChild(el);
+  const t = new bootstrap.Toast(el, { delay: type === 'danger' ? 6000 : 3000 });
+  el.addEventListener('hidden.bs.toast', () => el.remove());
+  t.show();
+}
+const fail = (e) => { if (e && e.message !== 'Session expired') toast(e.message, 'danger'); };
+function showErr(id, msg) { const el = $(id); el.textContent = msg || ''; el.classList.toggle('d-none', !msg); }
+
+function confirmBox(title, msg, okText) {
+  return new Promise((resolve) => {
+    $('#cfTitle').textContent = title; $('#cfMsg').textContent = msg; $('#cfOk').textContent = okText || 'Confirm';
+    const m = modal('confirmModal'); let ok = false;
+    $('#cfOk').onclick = () => { ok = true; m.hide(); };
+    document.getElementById('confirmModal').addEventListener('hidden.bs.modal', () => resolve(ok), { once: true });
+    m.show();
+  });
+}
+function genPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const a = new Uint32Array(10); crypto.getRandomValues(a);
+  return Array.from(a, (n) => chars[n % chars.length]).join('');
+}
+function copyText(text) {
+  const fallback = () => {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('Copied'); } catch (e) { toast('Select the text and copy it manually', 'warning'); }
+    ta.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('Copied'), fallback);
+  else fallback();
+}
+function showCreds(username, password) {
+  $('#credText').textContent = CFG.labName + ' Inventory\nUsername: ' + username + '\nPassword: ' + password;
+  modal('credModal').show();
+}
+
+// =====================================================================
+//  SESSION
+// =====================================================================
+function showLogin(msg) {
+  $('#appView').classList.add('d-none');
+  $('#loginView').classList.remove('d-none');
+  showErr('#loginAlert', msg);
+  setTimeout(() => $('#loginUser').focus(), 50);
+}
+function endSession(msg) {
+  S.token = null; S.user = null; store.del('riot_token');
+  $$('.modal.show').forEach((m) => bootstrap.Modal.getInstance(m) && bootstrap.Modal.getInstance(m).hide());
+  showLogin(msg);
+}
+async function doLogin(e) {
+  e.preventDefault();
+  showErr('#loginAlert', '');
+  const btn = $('#loginBtn'); btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const r = await run('login', $('#loginUser').value, $('#loginPass').value);
+    S.token = r.token; store.set('riot_token', r.token);
+    $('#loginPass').value = '';
+    await loadApp();
+  } catch (err) { showErr('#loginAlert', err.message); }
+  finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+}
+async function loadApp() {
+  const d = await api('getBootstrap');
+  applyConfig(d.config);
+  S.user = d.user; S.items = d.items; S.myLoans = d.myLoans;
+  $('#loginView').classList.add('d-none');
+  $('#appView').classList.remove('d-none');
+  $('#navUser').textContent = S.user.FullName || S.user.Username;
+  $('#navUserRole').textContent = '@' + S.user.Username + ' · ' + ((CFG.roles || {})[role()] || role());
+  applyPerms();
+  fillCategoryList();
+  setLayout(store.get('riot_layout') || 'grid', true);
+  setView(store.get('riot_view') || 'inventory');
+}
+async function doLogout() {
+  const t = S.token;
+  endSession('');
+  if (t) run('logout', t).catch(() => {});
+}
+
+// =====================================================================
+//  NAVIGATION
+// =====================================================================
+function setView(v) {
+  if ((v === 'admin' && !CAN.admin()) || (v === 'loans' && !CAN.borrow()) || !document.getElementById('view-' + v)) v = 'inventory';
+  S.view = v; store.set('riot_view', v);
+  $$('.app-view').forEach((el) => el.classList.toggle('d-none', el.id !== 'view-' + v));
+  $$('.app-nav .nav-link').forEach((el) => el.classList.toggle('active', el.dataset.view === v));
+  const nav = document.getElementById('mainNav');
+  if (nav.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(nav).hide();
+  if (v === 'inventory') renderInventory();
+  if (v === 'loans') renderMyLoans();
+  if (v === 'admin') setAdminTab(S.adminTab);
+  window.scrollTo(0, 0);
+}
+
+// =====================================================================
+//  INVENTORY
+// =====================================================================
+function allCategories() {
+  const set = new Set(CFG.categories);
+  S.items.forEach((i) => i.Category && set.add(String(i.Category)));
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+function fillCategoryList() {   // suggestions in the Add/Edit item form
+  $('#catList').innerHTML = allCategories().map((c) => '<option value="' + esc(c) + '">').join('');
+}
+const NO_CAT = '__none__';
+const catOf = (it) => String(it.Category || '').trim() || NO_CAT;
+const compact = (s) => s.replace(/[^a-z0-9]/g, '');
+
+/* ---- dynamic search ----
+   Every word must match somewhere in: name, description, category, ID, location, condition.
+   Forgiving: case-insensitive, "dht22" finds "DHT-22", "sensors" finds "sensor". */
+function searchWords() {
+  return $('#fSearch').value.toLowerCase().split(/\s+/).filter(Boolean);
+}
+function matchesSearch(it, words) {
+  if (!words.length) return true;
+  const hay = [it.ItemID, it.Name, it.Category, it.Details, it.Location, it.Condition].join(' ').toLowerCase();
+  const hayC = compact(hay);
+  return words.every((w) => {
+    // single letters/digits ("cabinet a", "drawer 3") must be a whole word, otherwise they match everything
+    if (w.length === 1) return new RegExp('(^|[^a-z0-9])' + w.replace(/[^a-z0-9]/g, '\\$&') + '([^a-z0-9]|$)').test(hay);
+    const stem = w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w;
+    return hay.indexOf(w) >= 0 || hay.indexOf(stem) >= 0 || (compact(stem) && hayC.indexOf(compact(stem)) >= 0);
+  });
+}
+function matchesStock(it) {
+  const stock = $('#fStock').value;
+  if (stock === 'avail') return it.AvailableQty > 0;
+  if (stock === 'low') return isLow(it);
+  if (stock === 'out') return it.AvailableQty <= 0;
+  return true;
+}
+function filteredItems() {
+  const words = searchWords(), sort = $('#fSort').value;
+  const list = S.items.filter((it) => (!S.cat || catOf(it) === S.cat) && matchesStock(it) && matchesSearch(it, words));
+  const by = {
+    name: (a, b) => String(a.Name).localeCompare(String(b.Name)),
+    recent: (a, b) => String(b.UpdatedAt).localeCompare(String(a.UpdatedAt)),
+    avail: (a, b) => a.AvailableQty - b.AvailableQty,
+    id: (a, b) => String(a.ItemID).localeCompare(String(b.ItemID)),
+  };
+  return list.sort(by[sort] || by.name);
+}
+/** Category chips with live counts (counts follow the current search & stock filter). */
+function renderChips() {
+  const words = searchWords();
+  const base = S.items.filter((it) => matchesStock(it) && matchesSearch(it, words));
+  const counts = {};
+  S.items.forEach((it) => { counts[catOf(it)] = 0; });
+  base.forEach((it) => { counts[catOf(it)]++; });
+  const cats = Object.keys(counts).sort((a, b) => (a === NO_CAT) - (b === NO_CAT) || a.localeCompare(b));
+  if (S.cat && !(S.cat in counts)) S.cat = '';
+  const chip = (val, label, n, icon) =>
+    '<button type="button" class="chip' + (S.cat === val ? ' active' : '') + '" data-action="cat" data-id="' + esc(val) + '"' + (n === 0 && S.cat !== val ? ' disabled' : '') + '>' +
+    (icon ? '<i class="bi ' + icon + ' me-1"></i>' : '') + esc(label) + '<span class="n">' + n + '</span></button>';
+  $('#catChips').innerHTML = chip('', 'All', base.length, 'bi-grid') +
+    cats.map((c) => chip(c, c === NO_CAT ? 'Uncategorized' : c, counts[c], catIcon(c === NO_CAT ? '' : c))).join('');
+}
+function hl(text, words) {   // highlight search words
+  text = String(text == null ? '' : text);
+  if (!words.length) return esc(text);
+  const re = new RegExp('(' + words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'ig');
+  return text.split(re).map((p, i) => (i % 2 ? '<mark>' + esc(p) + '</mark>' : esc(p))).join('');
+}
+function setLayout(l, silent) {
+  S.layout = l === 'list' ? 'list' : 'grid';
+  store.set('riot_layout', S.layout);
+  $$('[data-action="set-layout"]').forEach((b) => b.classList.toggle('active', b.dataset.layout === S.layout));
+  if (!silent) renderInventory();
+}
+function clearFilters() {
+  $('#fSearch').value = ''; $('#fStock').value = ''; S.cat = '';
+  renderInventory();
+}
+const CAT_ICONS = [[/sensor/i, 'bi-thermometer-half'], [/micro|board|arduino|esp|raspberry/i, 'bi-cpu'], [/module/i, 'bi-motherboard'],
+  [/motor|actuator|servo/i, 'bi-gear'], [/power|batter/i, 'bi-battery-charging'], [/network|communic|wifi|lora/i, 'bi-wifi'],
+  [/display|lcd|oled/i, 'bi-display'], [/cable|connector|wire/i, 'bi-plug'], [/tool|equipment/i, 'bi-tools'], [/passive|component/i, 'bi-diagram-2']];
+function catIcon(c) { const m = CAT_ICONS.find(([re]) => re.test(c || '')); return m ? m[1] : 'bi-box-seam'; }
+function imgHtml(it, cls) {
+  if (!it.ImageFileId) return '<i class="bi ' + catIcon(it.Category) + ' ' + cls + '"></i>';
+  const cached = S.imgCache[it.ImageFileId];
+  return '<img class="item-photo" loading="lazy" referrerpolicy="no-referrer" alt="" data-fid="' + esc(it.ImageFileId) + '" data-cat="' + esc(it.Category) + '" src="' + esc(cached || it.ImageURL) + '">';
+}
+function stockBadge(it) {
+  if (it.AvailableQty <= 0) return '<span class="badge text-bg-danger">Out of stock</span>';
+  if (isLow(it)) return '<span class="badge text-bg-warning">Low · ' + it.AvailableQty + ' left</span>';
+  return '<span class="badge text-bg-success">' + it.AvailableQty + ' available</span>';
+}
+function renderInventory() {
+  const list = filteredItems();
+  const units = S.items.reduce((a, i) => a + i.TotalQty, 0);
+  const onLoan = S.items.reduce((a, i) => a + Math.max(0, i.TotalQty - i.AvailableQty), 0);
+  const low = S.items.filter(isLow).length, out = S.items.filter((i) => i.AvailableQty <= 0).length;
+  const pl = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  $('#invSummary').textContent = pl(S.items.length, 'item') + ' · ' + pl(units, 'unit') + ' · ' + onLoan + ' on loan' +
+    (low ? ' · ' + low + ' low' : '') + (out ? ' · ' + out + ' out of stock' : '');
+  renderChips();
+  const words = searchWords();
+  const filtering = !!(words.length || S.cat || $('#fStock').value);
+  $('#clearFilters').classList.toggle('d-none', !filtering);
+  const catLabel = S.cat === NO_CAT ? 'Uncategorized' : S.cat;
+  $('#resultInfo').textContent = filtering
+    ? 'Showing ' + list.length + ' of ' + pl(S.items.length, 'item') + (S.cat ? ' in “' + catLabel + '”' : '') + (words.length ? ' matching “' + $('#fSearch').value.trim() + '”' : '')
+    : '';
+  if (!list.length) {
+    $('#itemGrid').innerHTML = '<div class="empty"><i class="bi bi-inboxes"></i>' +
+      (S.items.length ? 'No items match your search.' : (CAN.addItem() ? 'No items yet. Click <b>Add item</b> to create the first one.' : 'No items in the inventory yet.')) + '</div>';
+    return;
+  }
+  const snippet = (it) => {   // show the matching part of the description
+    const d = String(it.Details || '').replace(/\s+/g, ' ');
+    if (!d) return '';
+    let start = 0;
+    if (words.length) { const i = d.toLowerCase().indexOf(words[0]); if (i > 40) start = i - 30; }
+    return (start ? '…' : '') + d.slice(start, start + 110) + (d.length > start + 110 ? '…' : '');
+  };
+  if (S.layout === 'list') {
+    $('#itemGrid').innerHTML = '<div class="card table-card"><div class="table-responsive"><table class="table table-hover mb-0">' +
+      '<thead class="table-light small"><tr><th></th><th>Item</th><th class="d-none d-md-table-cell">Category</th><th class="d-none d-lg-table-cell">Location</th><th class="text-end">Stock</th></tr></thead><tbody>' +
+      list.map((it) =>
+        '<tr class="list-row" data-action="open-item" data-id="' + esc(it.ItemID) + '">' +
+          '<td style="width:60px"><div class="list-thumb">' + imgHtml(it, 'ph') + '</div></td>' +
+          '<td><div class="fw-semibold">' + hl(it.Name, words) + '</div>' +
+            '<div class="small text-muted">' + esc(it.ItemID) + '<span class="d-md-none"> · ' + hl(it.Category, words) + '</span></div>' +
+            (snippet(it) ? '<div class="small text-muted d-none d-sm-block">' + hl(snippet(it), words) + '</div>' : '') + '</td>' +
+          '<td class="small d-none d-md-table-cell">' + hl(it.Category, words) + '</td>' +
+          '<td class="small d-none d-lg-table-cell">' + hl(it.Location, words) + '</td>' +
+          '<td class="text-end text-nowrap">' + stockBadge(it) + '<div class="small text-muted">of ' + it.TotalQty + '</div></td>' +
+        '</tr>').join('') +
+      '</tbody></table></div></div>';
+    return;
+  }
+  $('#itemGrid').innerHTML = '<div class="row g-3">' + list.map((it) =>
+    '<div class="col-6 col-md-4 col-lg-3 col-xxl-2">' +
+      '<div class="card item-card h-100" data-action="open-item" data-id="' + esc(it.ItemID) + '">' +
+        '<div class="item-img">' + imgHtml(it, 'ph') + '</div>' +
+        '<div class="card-body p-2 p-md-3 d-flex flex-column">' +
+          '<div class="small text-muted text-truncate">' + esc(it.ItemID) + (it.Category ? ' · ' + hl(it.Category, words) : '') + '</div>' +
+          '<div class="fw-semibold clamp-2 my-1">' + hl(it.Name, words) + '</div>' +
+          '<div class="mt-auto d-flex flex-wrap align-items-center justify-content-between gap-1">' + stockBadge(it) +
+            '<span class="small text-muted">of ' + it.TotalQty + '</span></div>' +
+          (it.Location ? '<div class="small text-muted text-truncate mt-1"><i class="bi bi-geo-alt me-1"></i>' + hl(it.Location, words) + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div>').join('') + '</div>';
+}
+// Images that cannot load from Drive (e.g. domain sharing policy) are fetched through the server.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains('item-photo') || img.dataset.retried) return;
+  img.dataset.retried = '1';
+  const fid = img.dataset.fid;
+  call('getImageData', [S.token, fid])
+    .then((data) => { S.imgCache[fid] = data; $$('img[data-fid="' + fid + '"]').forEach((el) => { el.src = data; }); })
+    .catch(() => { if (img.isConnected) img.outerHTML = '<i class="bi ' + catIcon(img.dataset.cat) + ' ph"></i>'; });
+}, true);
+
+function upsertItem(it) {
+  if (!it) return;
+  const i = S.items.findIndex((x) => x.ItemID === it.ItemID);
+  if (i >= 0) S.items[i] = it; else S.items.push(it);
+}
+async function refreshAll() {
+  try {
+    const d = await api('getBootstrap');
+    applyConfig(d.config);
+    S.items = d.items; S.myLoans = d.myLoans; S.user = d.user;
+    applyPerms(); fillCategoryList(); setView(S.view); toast('Inventory refreshed');
+  } catch (e) { fail(e); }
+}
+
+// ---------- item detail ----------
+function openItem(id) {
+  const it = S.items.find((x) => x.ItemID === id);
+  if (!it) return;
+  S.currentItem = it;
+  $('#imId').textContent = it.ItemID + (it.Category ? ' · ' + it.Category : '');
+  $('#imName').textContent = it.Name;
+  const canBorrow = CAN.borrow();
+  const row = (k, v) => v ? '<tr><th>' + k + '</th><td>' + v + '</td></tr>' : '';
+  let html =
+    '<div class="row g-4">' +
+      '<div class="col-md-5"><div class="detail-img-wrap">' + imgHtml(it, 'detail-ph') + '</div></div>' +
+      '<div class="col-md-7">' +
+        '<div class="d-flex align-items-center gap-2 mb-3">' + stockBadge(it) + '<span class="text-muted small">' + it.AvailableQty + ' of ' + it.TotalQty + ' in the lab</span></div>' +
+        '<table class="table table-sm kv mb-3"><tbody>' +
+          row('Location', esc(it.Location)) + row('Condition', esc(it.Condition)) +
+          row('Purchased', it.PurchaseDate ? fmtDate(it.PurchaseDate) : '') +
+          row('Low-stock alert', it.MinQty ? 'at ' + it.MinQty : '') +
+          row('Datasheet', it.DatasheetURL ? '<a href="' + esc(it.DatasheetURL) + '" target="_blank" rel="noopener">Open link <i class="bi bi-box-arrow-up-right"></i></a>' : '') +
+          row('Last updated', fmtDateTime(it.UpdatedAt) + (it.UpdatedBy ? ' by ' + esc(it.UpdatedBy) : '')) +
+        '</tbody></table>' +
+        (it.Details ? '<h6 class="fw-semibold small text-muted text-uppercase">Details</h6><div class="pre-wrap small mb-3">' + esc(it.Details) + '</div>' : '') +
+      '</div>' +
+    '</div>';
+  if (canBorrow) {
+    html += '<hr><h6 class="fw-bold mb-3"><i class="bi bi-box-arrow-up-right me-2 text-brand"></i>Take out</h6>';
+    if (it.AvailableQty > 0) {
+      html +=
+        '<form id="borrowForm" class="row g-2 align-items-end">' +
+          '<div class="col-4 col-md-2"><label class="form-label small fw-medium">Qty</label><input class="form-control" type="number" id="bQty" min="1" max="' + it.AvailableQty + '" value="1" required></div>' +
+          '<div class="col-8 col-md-4"><label class="form-label small fw-medium">Return by (optional)</label><input class="form-control" type="date" id="bDate" min="' + todayStr() + '"></div>' +
+          '<div class="col-12 col-md-6"><label class="form-label small fw-medium">Purpose / project *</label><input class="form-control" id="bPurpose" maxlength="300" placeholder="e.g. CSE-499 capstone, smart irrigation" required></div>' +
+          '<div class="col-12"><div id="bError" class="alert alert-danger py-2 small d-none mb-2"></div><button class="btn btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Confirm take out</button></div>' +
+        '</form>';
+    } else {
+      html += '<p class="text-muted small mb-0">Currently out of stock.</p>';
+    }
+  }
+  if (isAdmin()) html += '<hr><h6 class="fw-bold mb-2"><i class="bi bi-people me-2 text-brand"></i>Currently on loan</h6><div id="imLoans" class="small text-muted">Loading…</div>';
+  $('#imBody').innerHTML = html;
+  const f = $('#borrowForm'); if (f) f.addEventListener('submit', submitBorrow);
+  applyPerms($('#imFooter'));
+  $('#imFooter').classList.toggle('d-none', !(CAN.editItem() || CAN.deleteItem()));
+  modal('itemModal').show();
+  if (isAdmin()) {
+    api('listLoans', 'item', it.ItemID).then((loans) => {
+      const el = $('#imLoans'); if (!el || S.currentItem !== it) return;
+      el.innerHTML = loans.length ? '<ul class="list-unstyled mb-0">' + loans.map((l) =>
+        '<li class="py-1 border-bottom"><b>' + l.Qty + '×</b> ' + esc(l.FullName) + ' <span class="text-muted">(@' + esc(l.Username) + ')</span> · ' +
+        fmtDate(l.BorrowedAt) + (isOverdue(l) ? ' <span class="badge text-bg-danger">overdue</span>' : '') + '<div class="text-muted">' + esc(l.Purpose) + '</div></li>').join('') + '</ul>'
+        : 'Nobody has this item right now.';
+    }).catch(fail);
+  }
+}
+async function submitBorrow(e) {
+  e.preventDefault();
+  const it = S.currentItem;
+  showErr('#bError', '');
+  try {
+    const r = await api('borrowItem', it.ItemID, Number($('#bQty').value), $('#bPurpose').value, $('#bDate').value);
+    upsertItem(r.item); S.myLoans.unshift(r.loan);
+    modal('itemModal').hide(); renderInventory();
+    toast('You took ' + r.loan.Qty + ' × ' + r.loan.ItemName + '. Remember to return it!');
+  } catch (err) { showErr('#bError', err.message); }
+}
+
+// ---------- item form ----------
+let pendingImage = null;
+function openItemForm(id) {
+  const it = id ? S.items.find((x) => x.ItemID === id) : null;
+  pendingImage = null;
+  $('#itemForm').reset();
+  showErr('#ifError', '');
+  $('#ifTitle').textContent = it ? 'Edit ' + it.ItemID : 'Add item';
+  $('#ifCondition').innerHTML = '<option value="">—</option>' + CFG.conditions.map((c) => '<option>' + esc(c) + '</option>').join('');
+  fillCategoryList();
+  $('#ifId').value = it ? it.ItemID : '';
+  $('#ifName').value = it ? it.Name : '';
+  $('#ifCategory').value = it ? it.Category : '';
+  $('#ifCondition').value = it ? (it.Condition || '') : 'New';
+  $('#ifTotal').value = it ? it.TotalQty : 1;
+  $('#ifMin').value = it && it.MinQty ? it.MinQty : '';
+  $('#ifLocation').value = it ? it.Location : '';
+  $('#ifPurchase').value = it ? it.PurchaseDate : '';
+  $('#ifDetails').value = it ? it.Details : '';
+  $('#ifLink').value = it ? it.DatasheetURL : '';
+  const onLoan = it ? it.TotalQty - it.AvailableQty : 0;
+  $('#ifLoanNote').textContent = onLoan > 0 ? onLoan + ' currently on loan — available stock will be total minus ' + onLoan + '.' : '';
+  $('#ifPreview').innerHTML = it && it.ImageFileId ? imgHtml(it, '') : '<i class="bi bi-image text-secondary fs-1"></i>';
+  $('#ifRemoveWrap').classList.toggle('d-none', !(it && it.ImageFileId));
+  modal('itemFormModal').show();
+}
+function resizeImage(file, max, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the image file.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('This image format is not supported. Use JPG or PNG.'));
+      img.onload = () => {
+        const s = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.round(img.width * s), h = Math.round(img.height * s);
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+async function onImagePicked() {
+  const file = $('#ifImage').files[0];
+  if (!file) { pendingImage = null; return; }
+  try {
+    const dataUrl = await resizeImage(file, 1000, 0.82);
+    pendingImage = { data: dataUrl.split(',')[1], mimeType: 'image/jpeg' };
+    $('#ifPreview').innerHTML = '<img src="' + dataUrl + '" alt="">';
+    $('#ifRemove').checked = false;
+  } catch (e) { pendingImage = null; $('#ifImage').value = ''; showErr('#ifError', e.message); }
+}
+async function submitItemForm(e) {
+  e.preventDefault();
+  showErr('#ifError', '');
+  if (!$('#ifName').value.trim()) return showErr('#ifError', 'Item name is required.');
+  if ($('#ifTotal').value === '') return showErr('#ifError', 'Total quantity is required.');
+  const data = {
+    ItemID: $('#ifId').value, Name: $('#ifName').value, Category: $('#ifCategory').value, Condition: $('#ifCondition').value,
+    TotalQty: Number($('#ifTotal').value), MinQty: $('#ifMin').value === '' ? 0 : Number($('#ifMin').value),
+    Location: $('#ifLocation').value, PurchaseDate: $('#ifPurchase').value, Details: $('#ifDetails').value,
+    DatasheetURL: $('#ifLink').value.trim(), RemoveImage: $('#ifRemove').checked,
+  };
+  const btn = $('#ifSave'); btn.disabled = true;
+  try {
+    const it = await api('saveItem', data, pendingImage);
+    upsertItem(it); fillCategoryList(); renderInventory();
+    modal('itemFormModal').hide();
+    toast((data.ItemID ? 'Saved ' : 'Added ') + it.Name);
+  } catch (err) { showErr('#ifError', err.message); }
+  finally { btn.disabled = false; }
+}
+async function deleteCurrentItem() {
+  const it = S.currentItem; if (!it) return;
+  modal('itemModal').hide();
+  if (!(await confirmBox('Delete ' + it.Name + '?', 'This removes the item and its photo. Loan history is kept. This cannot be undone.', 'Delete'))) return;
+  try {
+    await api('deleteItem', it.ItemID);
+    S.items = S.items.filter((x) => x.ItemID !== it.ItemID);
+    fillCategoryList(); renderInventory(); toast('Item deleted');
+  } catch (e) { fail(e); }
+}
+
+// =====================================================================
+//  MY ITEMS (loans)
+// =====================================================================
+function statusBadge(l) {
+  if (l.Status === 'OPEN') return isOverdue(l) ? '<span class="badge text-bg-danger">Overdue</span>' : '<span class="badge text-bg-primary">With user</span>';
+  if (l.Status === 'RETURNED') return '<span class="badge text-bg-success">Returned</span>';
+  if (l.Status === 'PARTIAL') return '<span class="badge text-bg-warning">Partly returned (' + l.ReturnedQty + '/' + l.Qty + ')</span>';
+  if (l.Status === 'CONSUMED') return '<span class="badge text-bg-secondary">Consumed / lost</span>';
+  return '<span class="badge text-bg-light">' + esc(l.Status) + '</span>';
+}
+function renderMyLoans() {
+  const open = S.myLoans.filter((l) => l.Status === 'OPEN');
+  const hist = S.myLoans.filter((l) => l.Status !== 'OPEN');
+  $('#myOpenLoans').innerHTML = open.length ? '<div class="row g-3">' + open.map((l) =>
+    '<div class="col-md-6 col-lg-4"><div class="card soft-card h-100"><div class="card-body">' +
+      '<div class="d-flex justify-content-between align-items-start mb-1"><div class="small text-muted">' + esc(l.LoanID) + ' · ' + esc(l.ItemID) + '</div>' + statusBadge(l) + '</div>' +
+      '<h6 class="fw-bold mb-1">' + l.Qty + ' × ' + esc(l.ItemName) + '</h6>' +
+      '<div class="small text-muted mb-2">' + esc(l.Purpose) + '</div>' +
+      '<div class="small">Taken: ' + fmtDateTime(l.BorrowedAt) + '</div>' +
+      '<div class="small' + (isOverdue(l) ? ' text-danger fw-semibold' : '') + '">Return by: ' + fmtDate(l.ExpectedReturn) + '</div>' +
+      (CFG.selfReturn || isAdmin() ? '<button class="btn btn-outline-primary btn-sm mt-3" data-action="return-loan" data-id="' + esc(l.LoanID) + '"><i class="bi bi-box-arrow-in-down-left me-1"></i>I returned it</button>'
+        : '<div class="small text-muted mt-3">Return it to the lab admin to close this loan.</div>') +
+    '</div></div></div>').join('') + '</div>'
+    : '<div class="card soft-card"><div class="empty"><i class="bi bi-bag"></i>You have no items checked out.</div></div>';
+  $('#myLoanHistory').innerHTML = hist.length ? '<div class="card table-card"><div class="table-responsive"><table class="table table-hover small">' +
+    '<thead class="table-light"><tr><th>Item</th><th>Qty</th><th>Purpose</th><th>Taken</th><th>Closed</th><th>Status</th></tr></thead><tbody>' +
+    hist.map((l) => '<tr><td>' + esc(l.ItemName) + '<div class="text-muted">' + esc(l.ItemID) + '</div></td><td>' + l.Qty + '</td><td>' + esc(l.Purpose) + '</td><td>' +
+      fmtDate(l.BorrowedAt) + '</td><td>' + fmtDate(l.ClosedAt) + '</td><td>' + statusBadge(l) + '</td></tr>').join('') +
+    '</tbody></table></div></div>' : '<div class="text-muted small">No history yet.</div>';
+}
+async function selfReturn(id) {
+  const l = S.myLoans.find((x) => x.LoanID === id); if (!l) return;
+  if (!(await confirmBox('Return ' + l.Qty + ' × ' + l.ItemName + '?', 'Confirm you have put the item back in its place in the lab.', 'Yes, returned'))) return;
+  try {
+    const r = await api('closeLoan', id, l.Qty, '');
+    Object.assign(l, r.loan); upsertItem(r.item); renderMyLoans(); toast('Thanks! Return recorded.');
+  } catch (e) { fail(e); }
+}
+async function refreshMyLoans() {
+  try { S.myLoans = await api('listLoans', 'mine'); renderMyLoans(); } catch (e) { fail(e); }
+}
+
+// =====================================================================
+//  ADMIN
+// =====================================================================
+function setAdminTab(tab) {
+  S.adminTab = tab;
+  $$('#adminTabs .nav-link').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
+  $$('.admin-tab').forEach((el) => el.classList.toggle('d-none', el.id !== 'tab-' + tab));
+  if (tab === 'overview') loadOverview();
+  if (tab === 'loans') api('listLoans', 'all').then((l) => { S.allLoans = l; renderAllLoans(); }).catch(fail);
+  if (tab === 'users') api('listUsers').then((u) => { S.users = u; renderUsers(); }).catch(fail);
+  if (tab === 'log') api('getLog', 300).then((l) => { S.log = l; renderLog(); }).catch(fail);
+}
+async function loadOverview() {
+  try {
+    const [ov, loans] = await Promise.all([api('getAdminOverview'), api('listLoans', 'all')]);
+    S.overview = ov; S.allLoans = loans;
+    const open = loans.filter((l) => l.Status === 'OPEN'), overdue = open.filter(isOverdue);
+    const units = S.items.reduce((a, i) => a + i.TotalQty, 0);
+    const onLoan = S.items.reduce((a, i) => a + Math.max(0, i.TotalQty - i.AvailableQty), 0);
+    const low = S.items.filter((i) => isLow(i) || i.AvailableQty <= 0);
+    const stat = (icon, color, v, l) => '<div class="col-6 col-md-4 col-xl-2"><div class="card stat h-100"><div class="card-body"><i class="bi ' + icon + ' text-' + color + '"></i><div class="v mt-1">' + v + '</div><div class="l">' + l + '</div></div></div></div>';
+    $('#tab-overview').innerHTML =
+      '<div class="row g-3 mb-4">' +
+        stat('bi-box-seam', 'primary', S.items.length, 'Item types') + stat('bi-stack', 'info', units, 'Total units') +
+        stat('bi-box-arrow-up-right', 'primary', onLoan, 'Units on loan') + stat('bi-clipboard-check', 'success', open.length, 'Open loans') +
+        stat('bi-alarm', 'danger', overdue.length, 'Overdue') + stat('bi-people', 'secondary', ov.activeUsers, 'Active users') +
+      '</div>' +
+      '<div class="row g-3">' +
+        '<div class="col-lg-7"><div class="card soft-card h-100"><div class="card-body"><h6 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Low / out of stock</h6>' +
+          (low.length ? '<ul class="list-group list-group-flush">' + low.map((i) => '<li class="list-group-item px-0 d-flex justify-content-between align-items-center" role="button" data-action="open-item" data-id="' + esc(i.ItemID) + '"><span>' + esc(i.Name) + ' <span class="text-muted small">' + esc(i.ItemID) + '</span></span>' + stockBadge(i) + '</li>').join('') + '</ul>'
+            : '<p class="text-muted small mb-0">All items are above their low-stock level.</p>') +
+        '</div></div></div>' +
+        '<div class="col-lg-5"><div class="card soft-card h-100"><div class="card-body"><h6 class="fw-bold mb-3"><i class="bi bi-database me-2 text-brand"></i>Data & backup</h6>' +
+          '<div class="d-grid gap-2 mb-3">' +
+            '<a class="btn btn-outline-primary text-start" href="' + esc(ov.sheetUrl) + '" target="_blank" rel="noopener"><i class="bi bi-table me-2"></i>Open database (Google Sheet)</a>' +
+            '<a class="btn btn-outline-primary text-start" href="' + esc(ov.folderUrl) + '" target="_blank" rel="noopener"><i class="bi bi-folder2-open me-2"></i>Open Drive folder (images & backups)</a>' +
+          '</div>' +
+          '<div class="small">Weekly backup: ' + (ov.backupEnabled ? '<span class="text-success fw-semibold">On</span> (every Friday)' : '<span class="text-danger fw-semibold">Off</span> — run setup() again') + '</div>' +
+          '<div class="small text-muted">Last backup: ' + (ov.lastBackup ? fmtDateTime(ov.lastBackup) : 'not yet') + '</div>' +
+          '<div class="small text-muted mt-2">To export: open the Sheet → File → Download → Excel/CSV.</div>' +
+        '</div></div></div>' +
+      '</div>';
+  } catch (e) { fail(e); }
+}
+function renderAllLoans() {
+  const f = $('#aLoanFilter').value, q = $('#aLoanSearch').value.trim().toLowerCase();
+  const list = S.allLoans.filter((l) => {
+    if (f === 'open' && l.Status !== 'OPEN') return false;
+    if (f === 'overdue' && !isOverdue(l)) return false;
+    if (f === 'closed' && l.Status === 'OPEN') return false;
+    if (q && [l.LoanID, l.ItemID, l.ItemName, l.Username, l.FullName, l.Purpose].join(' ').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  $('#aLoans').innerHTML = list.length ? '<div class="card table-card"><div class="table-responsive"><table class="table table-hover small">' +
+    '<thead class="table-light"><tr><th>Loan</th><th>User</th><th>Item</th><th>Qty</th><th>Purpose</th><th>Taken</th><th>Return by</th><th>Status</th><th></th></tr></thead><tbody>' +
+    list.map((l) => '<tr><td class="text-nowrap">' + esc(l.LoanID) + '</td><td>' + esc(l.FullName) + '<div class="text-muted">@' + esc(l.Username) + '</div></td>' +
+      '<td>' + esc(l.ItemName) + '<div class="text-muted">' + esc(l.ItemID) + '</div></td><td>' + l.Qty + '</td><td style="min-width:160px">' + esc(l.Purpose) +
+      (l.Note ? '<div class="text-muted fst-italic">' + esc(l.Note) + '</div>' : '') + '</td>' +
+      '<td class="text-nowrap">' + fmtDate(l.BorrowedAt) + '</td><td class="text-nowrap">' + fmtDate(l.ExpectedReturn) + '</td><td>' + statusBadge(l) +
+      (l.ClosedAt ? '<div class="text-muted">' + fmtDate(l.ClosedAt) + ' by ' + esc(l.ClosedBy) + '</div>' : '') + '</td>' +
+      '<td class="text-end">' + (l.Status === 'OPEN' ? '<button class="btn btn-sm btn-outline-primary text-nowrap" data-action="close-loan" data-id="' + esc(l.LoanID) + '">Close</button>' : '') + '</td></tr>').join('') +
+    '</tbody></table></div></div>' : '<div class="card soft-card"><div class="empty"><i class="bi bi-clipboard"></i>No loans to show.</div></div>';
+}
+function openCloseLoan(id) {
+  const l = S.allLoans.find((x) => x.LoanID === id); if (!l) return;
+  $('#clId').value = id;
+  $('#clInfo').innerHTML = '<b>' + esc(l.FullName) + '</b> has <b>' + l.Qty + ' × ' + esc(l.ItemName) + '</b><br><span class="text-muted small">' + esc(l.Purpose) + '</span>';
+  $('#clQty').value = l.Qty; $('#clQty').max = l.Qty; $('#clNote').value = '';
+  modal('closeLoanModal').show();
+}
+async function submitCloseLoan(e) {
+  e.preventDefault();
+  const id = $('#clId').value;
+  try {
+    const r = await api('closeLoan', id, Number($('#clQty').value), $('#clNote').value);
+    const i = S.allLoans.findIndex((x) => x.LoanID === id); if (i >= 0) S.allLoans[i] = r.loan;
+    const m = S.myLoans.find((x) => x.LoanID === id); if (m) Object.assign(m, r.loan);
+    upsertItem(r.item); renderAllLoans(); modal('closeLoanModal').hide(); toast('Loan closed');
+  } catch (err) { fail(err); }
+}
+
+// ---------- users ----------
+const ROLE_ORDER = { admin: 0, ra: 1, student: 2 };
+const ROLE_HELP = {
+  student: 'Student: can search and view the inventory only.',
+  ra: 'RA: can view, add items' + '{EDIT}' + '{BORROW}' + '.',
+  admin: 'Admin: full control: items, users, loans, activity log.',
+};
+function roleBadge(r) {
+  if (r === 'admin') return '<span class="badge text-bg-dark">Admin</span>';
+  if (r === 'ra') return '<span class="badge text-bg-info">RA</span>';
+  return '<span class="badge text-bg-light border">Student</span>';
+}
+function roleHelp() {
+  const r = $('#ufRole').value;
+  const borrow = (CFG.borrowRoles || []).indexOf(r) >= 0;
+  let t = ROLE_HELP[r] || '';
+  t = t.replace('{EDIT}', CFG.raCanEditItems ? ', edit items' : '').replace('{BORROW}', borrow ? ' and take items out' : '');
+  if (r === 'student' && borrow) t = 'Student: can search, view and take items out.';
+  $('#ufRoleHelp').textContent = t;
+}
+function renderUsers() {
+  const q = $('#aUserSearch').value.trim().toLowerCase();
+  const list = S.users.filter((u) => !q || [u.Username, u.FullName, u.Contact].join(' ').toLowerCase().indexOf(q) >= 0)
+    .sort((a, b) => ROLE_ORDER[a.Role] - ROLE_ORDER[b.Role] || a.Username.localeCompare(b.Username));
+  $('#aUsers').innerHTML = '<div class="card table-card"><div class="table-responsive"><table class="table table-hover small">' +
+    '<thead class="table-light"><tr><th>User</th><th>Contact</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead><tbody>' +
+    list.map((u) => '<tr' + (u.Active ? '' : ' class="text-muted"') + '><td><b>' + esc(u.FullName) + '</b><div class="text-muted">@' + esc(u.Username) + '</div></td>' +
+      '<td>' + esc(u.Contact) + '</td><td>' + roleBadge(u.Role) + '</td>' +
+      '<td>' + (u.Active ? '<span class="badge text-bg-success">Active</span>' : '<span class="badge text-bg-secondary">Disabled</span>') + '</td>' +
+      '<td class="text-nowrap">' + fmtDateTime(u.LastLogin) + '</td>' +
+      '<td class="text-end"><div class="dropdown"><button class="btn btn-sm btn-light border" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button><ul class="dropdown-menu dropdown-menu-end">' +
+        '<li><a class="dropdown-item" href="#" data-action="edit-user" data-id="' + esc(u.Username) + '"><i class="bi bi-pencil me-2"></i>Edit</a></li>' +
+        '<li><a class="dropdown-item" href="#" data-action="reset-user-pass" data-id="' + esc(u.Username) + '"><i class="bi bi-key me-2"></i>Reset password</a></li>' +
+        '<li><a class="dropdown-item" href="#" data-action="toggle-user" data-id="' + esc(u.Username) + '"><i class="bi ' + (u.Active ? 'bi-person-dash' : 'bi-person-check') + ' me-2"></i>' + (u.Active ? 'Disable' : 'Enable') + '</a></li>' +
+        (u.Username !== S.user.Username ? '<li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="#" data-action="delete-user" data-id="' + esc(u.Username) + '"><i class="bi bi-trash me-2"></i>Delete</a></li>' : '') +
+      '</ul></div></td></tr>').join('') +
+    '</tbody></table></div></div>' +
+    '<p class="small text-muted mt-2">Tip: disable accounts of students who have left instead of deleting them — their loan history stays linked.</p>';
+}
+function openUserForm(username) {
+  const u = username ? S.users.find((x) => x.Username === username) : null;
+  $('#userForm').reset(); showErr('#ufError', '');
+  $('#ufMode').value = u ? 'edit' : 'add';
+  $('#ufTitle').textContent = u ? 'Edit @' + u.Username : 'Add user';
+  $('#ufUsername').value = u ? u.Username : ''; $('#ufUsername').disabled = !!u;
+  $('#ufFullName').value = u ? u.FullName : '';
+  $('#ufContact').value = u ? u.Contact : '';
+  $('#ufRole').value = u ? u.Role : 'student';
+  roleHelp();
+  $('#ufActive').checked = u ? u.Active : true;
+  $('#ufActiveWrap').classList.toggle('d-none', !u);
+  $('#ufPassWrap').classList.toggle('d-none', !!u);
+  $('#ufPassword').value = u ? '' : genPassword();
+  modal('userModal').show();
+}
+async function submitUserForm(e) {
+  e.preventDefault(); showErr('#ufError', '');
+  const data = { Username: $('#ufUsername').value.trim().toLowerCase(), FullName: $('#ufFullName').value, Contact: $('#ufContact').value, Role: $('#ufRole').value };
+  try {
+    if ($('#ufMode').value === 'add') {
+      const pw = $('#ufPassword').value;
+      const u = await api('createUser', data, pw);
+      S.users.push(u); renderUsers(); modal('userModal').hide();
+      setTimeout(() => showCreds(u.Username, pw), 350);
+    } else {
+      data.Active = $('#ufActive').checked;
+      const u = await api('updateUser', data);
+      S.users[S.users.findIndex((x) => x.Username === u.Username)] = u; renderUsers(); modal('userModal').hide(); toast('User updated');
+    }
+  } catch (err) { showErr('#ufError', err.message); }
+}
+async function toggleUser(username) {
+  const u = S.users.find((x) => x.Username === username); if (!u) return;
+  if (u.Active && !(await confirmBox('Disable @' + u.Username + '?', 'They will be signed out and cannot log in until re-enabled.', 'Disable'))) return;
+  try {
+    const r = await api('updateUser', Object.assign({}, u, { Active: !u.Active }));
+    S.users[S.users.indexOf(u)] = r; renderUsers(); toast(r.Active ? 'User enabled' : 'User disabled');
+  } catch (e) { fail(e); }
+}
+async function deleteUserAction(username) {
+  if (!(await confirmBox('Delete @' + username + '?', 'The account is removed permanently. Consider disabling instead.', 'Delete'))) return;
+  try { await api('deleteUser', username); S.users = S.users.filter((x) => x.Username !== username); renderUsers(); toast('User deleted'); }
+  catch (e) { fail(e); }
+}
+
+// ---------- passwords ----------
+function openPwModal(mode, username) {
+  $('#pwForm').reset(); showErr('#pwError', '');
+  $('#pwMode').value = mode; $('#pwUser').value = username || '';
+  const reset = mode === 'reset';
+  $('#pwTitle').textContent = reset ? 'Reset password for @' + username : 'Change your password';
+  $('#pwCurrentWrap').classList.toggle('d-none', reset);
+  $('#pwConfirmWrap').classList.toggle('d-none', reset);
+  $('#pwGen').classList.toggle('d-none', !reset);
+  $('#pwNew').type = reset ? 'text' : 'password';
+  if (reset) $('#pwNew').value = genPassword();
+  modal('pwModal').show();
+}
+async function submitPw(e) {
+  e.preventDefault(); showErr('#pwError', '');
+  const mode = $('#pwMode').value, pw = $('#pwNew').value;
+  if (pw.length < 6) return showErr('#pwError', 'Password must be at least 6 characters.');
+  try {
+    if (mode === 'reset') {
+      const u = $('#pwUser').value;
+      await api('resetUserPassword', u, pw);
+      modal('pwModal').hide(); setTimeout(() => showCreds(u, pw), 350);
+    } else {
+      if (pw !== $('#pwConfirm').value) return showErr('#pwError', 'New passwords do not match.');
+      const r = await api('changePassword', $('#pwCurrent').value, pw);
+      S.token = r.token; store.set('riot_token', r.token);
+      modal('pwModal').hide(); toast('Password changed. Other devices were signed out.');
+    }
+  } catch (err) { showErr('#pwError', err.message); }
+}
+
+// ---------- activity log ----------
+function renderLog() {
+  const q = $('#aLogSearch').value.trim().toLowerCase();
+  const list = S.log.filter((l) => !q || [l.Username, l.Action, l.ItemID, l.Details].join(' ').toLowerCase().indexOf(q) >= 0);
+  $('#aLog').innerHTML = list.length ? '<div class="card table-card"><div class="table-responsive"><table class="table table-sm table-hover small">' +
+    '<thead class="table-light"><tr><th>When</th><th>User</th><th>Action</th><th>Item</th><th>Details</th></tr></thead><tbody>' +
+    list.map((l) => '<tr><td class="text-nowrap">' + fmtDateTime(l.Timestamp) + '</td><td>' + esc(l.Username) + '</td><td><code>' + esc(l.Action) + '</code></td><td>' + esc(l.ItemID) + '</td><td>' + esc(l.Details) + '</td></tr>').join('') +
+    '</tbody></table></div></div><p class="small text-muted mt-2">Showing the latest 300 entries. The full log is in the "Log" tab of the Google Sheet.</p>'
+    : '<div class="card soft-card"><div class="empty"><i class="bi bi-journal"></i>No activity yet.</div></div>';
+}
+
+// =====================================================================
+//  EVENTS
+// =====================================================================
+const ACTIONS = {
+  'nav': (id, el) => setView(el.dataset.view),
+  'logout': doLogout,
+  'refresh': refreshAll,
+  'refresh-myloans': refreshMyLoans,
+  'open-item': (id) => openItem(id),
+  'cat': (id) => { S.cat = S.cat === id ? '' : id; renderInventory(); },
+  'set-layout': (id, el) => setLayout(el.dataset.layout),
+  'clear-filters': clearFilters,
+  'add-item': () => openItemForm(null),
+  'edit-item': () => { const it = S.currentItem; modal('itemModal').hide(); setTimeout(() => openItemForm(it.ItemID), 300); },
+  'delete-item': deleteCurrentItem,
+  'return-loan': (id) => selfReturn(id),
+  'admin-tab': (id, el) => setAdminTab(el.dataset.tab),
+  'close-loan': (id) => openCloseLoan(id),
+  'add-user': () => openUserForm(null),
+  'edit-user': (id) => openUserForm(id),
+  'reset-user-pass': (id) => openPwModal('reset', id),
+  'toggle-user': (id) => toggleUser(id),
+  'delete-user': (id) => deleteUserAction(id),
+  'change-pass': () => openPwModal('change'),
+  'gen-pass': (id, el) => { const t = document.getElementById(el.dataset.target); t.value = genPassword(); t.type = 'text'; },
+  'toggle-pass': (id, el) => { const t = document.getElementById(el.dataset.target); t.type = t.type === 'password' ? 'text' : 'password'; },
+  'copy-cred': () => copyText($('#credText').textContent),
+};
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  if (el.tagName === 'A') e.preventDefault();
+  const fn = ACTIONS[el.dataset.action];
+  if (fn) fn(el.dataset.id, el, e);
+});
+
+$('#loginForm').addEventListener('submit', doLogin);
+$('#itemForm').addEventListener('submit', submitItemForm);
+$('#ifImage').addEventListener('change', onImagePicked);
+$('#closeLoanForm').addEventListener('submit', submitCloseLoan);
+$('#userForm').addEventListener('submit', submitUserForm);
+$('#ufRole').addEventListener('change', roleHelp);
+$('#pwForm').addEventListener('submit', submitPw);
+$('#fSearch').addEventListener('input', renderInventory);
+['#fStock', '#fSort'].forEach((s) => $(s).addEventListener('change', renderInventory));
+$('#aLoanFilter').addEventListener('change', renderAllLoans);
+$('#aLoanSearch').addEventListener('input', renderAllLoans);
+$('#aUserSearch').addEventListener('input', renderUsers);
+$('#aLogSearch').addEventListener('input', renderLog);
+
+// =====================================================================
+//  START
+// =====================================================================
+(function init() {
+  applyConfig({});
+  if (!apiConfigured()) return showLogin('Setup needed: this page is not connected to the server yet. Paste your Apps Script /exec link into API_URL in index.html.');
+  const saved = store.get('riot_token');
+  if (saved) {
+    S.token = saved;
+    loadApp().catch((e) => { if (e.message !== 'Session expired') endSession(e.message); });
+  } else {
+    showLogin('');
+  }
+})();
+</script>
+</body>
+</html>
