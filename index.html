@@ -168,7 +168,7 @@
 
 <!-- ======================= APP ======================= -->
 <section id="appView" class="d-none">
-  <nav class="navbar navbar-expand-md navbar-dark app-nav sticky-top shadow-sm">
+  <nav class="navbar navbar-expand-lg navbar-dark app-nav sticky-top shadow-sm">
     <div class="container-xl">
       <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="#" data-action="nav" data-view="inventory">
         <span class="lab-logo sm" role="img" aria-label="RIoT Center logo"></span>
@@ -178,10 +178,11 @@
         <span class="navbar-toggler-icon"></span>
       </button>
       <div class="collapse navbar-collapse" id="mainNav">
-        <ul class="navbar-nav me-auto ms-md-3 gap-1">
+        <ul class="navbar-nav me-auto ms-lg-3 gap-1">
           <li class="nav-item"><a class="nav-link" href="#" data-action="nav" data-view="inventory"><i class="bi bi-grid me-1"></i>Inventory</a></li>
           <li class="nav-item" data-perm="request"><a class="nav-link" href="#" data-action="nav" data-view="loans"><i class="bi bi-bag-check me-1"></i>My Items</a></li>
           <li class="nav-item" data-perm="loansView"><a class="nav-link" href="#" data-action="nav" data-view="requests"><i class="bi bi-inbox me-1"></i>Loans<span class="badge rounded-pill text-bg-warning nav-badge d-none" id="navBadge"></span></a></li>
+          <li class="nav-item" data-perm="allocView"><a class="nav-link" href="#" data-action="nav" data-view="alloc"><i class="bi bi-pc-display me-1"></i>Allocation<span class="badge rounded-pill text-bg-warning nav-badge d-none" id="navBadgeAlloc"></span></a></li>
           <li class="nav-item" data-perm="admin"><a class="nav-link" href="#" data-action="nav" data-view="admin"><i class="bi bi-shield-lock me-1"></i>Admin</a></li>
         </ul>
         <div class="dropdown">
@@ -290,27 +291,56 @@
       <div id="reqList"></div>
     </div>
 
+    <!-- ---------- ALLOCATION (long-term: laptops, desktops …) ---------- -->
+    <div id="view-alloc" class="app-view d-none">
+      <div class="d-flex align-items-center justify-content-between mb-3 gap-2">
+        <div>
+          <h4 class="fw-bold mb-0">Allocation</h4>
+          <div class="text-muted small" id="avSub"></div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" data-action="refresh-alloc"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-sm-inline ms-1">Refresh</span></button>
+          <button class="btn btn-primary btn-sm" data-perm="admin" data-action="add-alloc"><i class="bi bi-person-workspace me-1"></i>Allocate</button>
+        </div>
+      </div>
+      <div class="alert alert-light border small py-2 mb-3 d-none" id="avHowTo"></div>
+      <div class="card soft-card mb-3" data-perm="admin">
+        <div class="card-body p-2 p-md-3">
+          <div class="row g-2">
+            <div class="col-12 col-lg-6">
+              <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input class="form-control" id="avSearch" type="search" placeholder="Search person, item, room, note…" autocomplete="off">
+              </div>
+            </div>
+            <div class="col-6 col-lg-3"><select class="form-select" id="avRoom" aria-label="Room filter"></select></div>
+            <div class="col-6 col-lg-3">
+              <select class="form-select" id="avGroup" aria-label="Group by">
+                <option value="">No grouping</option>
+                <option value="person">Group by person</option>
+                <option value="room">Group by room</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+        <div class="pill-filter" id="avFilters"></div>
+        <span class="small text-muted ms-md-auto" id="avInfo"></span>
+      </div>
+      <div id="avList"></div>
+    </div>
+
     <!-- ---------- ADMIN ---------- -->
     <div id="view-admin" class="app-view d-none">
       <h4 class="fw-bold mb-3">Admin Panel</h4>
       <ul class="nav nav-tabs mb-3 flex-nowrap tabs-scroll" id="adminTabs">
         <li class="nav-item"><a class="nav-link active" href="#" data-action="admin-tab" data-tab="overview">Overview</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-action="admin-tab" data-tab="allocations">Allocations</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-action="admin-tab" data-tab="users">Users</a></li>
         <li class="nav-item"><a class="nav-link text-nowrap" href="#" data-action="admin-tab" data-tab="log">Activity log</a></li>
       </ul>
 
       <div id="tab-overview" class="admin-tab"></div>
-
-      <div id="tab-allocations" class="admin-tab d-none">
-        <p class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Allocations are long-term assignments (e.g. a desktop or laptop for an RA or student). They are not loans: no request, no return date. Only the Admin can see this.</p>
-        <div class="d-flex flex-wrap gap-2 mb-3">
-          <select class="form-select w-auto" id="aAllocFilter"><option value="active">In use</option><option value="ended">Ended</option><option value="all">All</option></select>
-          <input class="form-control" style="max-width:300px" id="aAllocSearch" type="search" placeholder="Search person, item…" autocomplete="off">
-          <button class="btn btn-primary ms-auto" data-action="add-alloc"><i class="bi bi-person-workspace me-1"></i>Allocate</button>
-        </div>
-        <div id="aAllocs"></div>
-      </div>
 
       <div id="tab-users" class="admin-tab d-none">
         <div class="d-flex flex-wrap gap-2 mb-3">
@@ -457,12 +487,16 @@
     <form class="modal-content" id="decideForm">
       <div class="modal-header"><h5 class="modal-title fw-bold" id="dcTitle">Approve request</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <input type="hidden" id="dcId"><input type="hidden" id="dcMode">
+        <input type="hidden" id="dcId"><input type="hidden" id="dcMode"><input type="hidden" id="dcKind">
         <div class="mb-3" id="dcInfo"></div>
         <div class="mb-3" id="dcQtyWrap">
           <label class="form-label small fw-medium" for="dcQty">Quantity to give</label>
           <input class="form-control" type="number" min="1" step="1" id="dcQty">
           <div class="form-text" id="dcQtyHelp"></div>
+        </div>
+        <div class="mb-3 d-none" id="dcRoomWrap">
+          <label class="form-label small fw-medium" for="dcRoom">Room where it will be used</label>
+          <input class="form-control" id="dcRoom" maxlength="60" list="roomList" placeholder="e.g. Room 3">
         </div>
         <label class="form-label small fw-medium" for="dcNote" id="dcNoteLabel">Message to the student (optional)</label>
         <input class="form-control" id="dcNote" maxlength="300">
@@ -482,7 +516,7 @@
     <form class="modal-content" id="allocForm">
       <div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-person-workspace me-2 text-brand"></i>Allocate item</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <p class="small text-muted">For long-term use (e.g. a desktop or laptop for an RA or student). Not a loan; only the Admin sees allocations.</p>
+        <p class="small text-muted">For long-term use (e.g. a desktop or laptop for an RA or student). Not a loan: the person sees it under <b>Allocation</b> and can request to return it.</p>
         <div class="mb-3">
           <label class="form-label small fw-medium" for="alItem">Item *</label>
           <select class="form-select" id="alItem" required></select>
@@ -490,6 +524,10 @@
         <div class="mb-3">
           <label class="form-label small fw-medium" for="alUser">Allocate to *</label>
           <select class="form-select" id="alUser" required></select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-medium" for="alRoomIn">Room where it will be used</label>
+          <input class="form-control" id="alRoomIn" maxlength="60" list="roomList" placeholder="e.g. Room 3">
         </div>
         <div class="row g-2 mb-1">
           <div class="col-4">
