@@ -183,7 +183,7 @@
           <li class="nav-item" data-perm="request"><a class="nav-link" href="#" data-action="nav" data-view="loans"><i class="bi bi-bag-check me-1"></i>My Items</a></li>
           <li class="nav-item" data-perm="loansView"><a class="nav-link" href="#" data-action="nav" data-view="requests"><i class="bi bi-inbox me-1"></i>Loans<span class="badge rounded-pill text-bg-warning nav-badge d-none" id="navBadge"></span></a></li>
           <li class="nav-item" data-perm="allocView"><a class="nav-link" href="#" data-action="nav" data-view="alloc"><i class="bi bi-pc-display me-1"></i>Allocation<span class="badge rounded-pill text-bg-warning nav-badge d-none" id="navBadgeAlloc"></span></a></li>
-          <li class="nav-item" data-perm="admin"><a class="nav-link" href="#" data-action="nav" data-view="admin"><i class="bi bi-shield-lock me-1"></i>Admin</a></li>
+          <li class="nav-item" data-perm="manage"><a class="nav-link" href="#" data-action="nav" data-view="admin"><i class="bi bi-shield-lock me-1"></i><span id="navAdminLabel">Admin</span></a></li>
         </ul>
         <div class="dropdown">
           <button class="btn btn-sm btn-light dropdown-toggle d-flex align-items-center gap-2" data-bs-toggle="dropdown">
@@ -300,11 +300,11 @@
         </div>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary btn-sm" data-action="refresh-alloc"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-sm-inline ms-1">Refresh</span></button>
-          <button class="btn btn-primary btn-sm" data-perm="admin" data-action="add-alloc"><i class="bi bi-person-workspace me-1"></i>Allocate</button>
+          <button class="btn btn-primary btn-sm" data-perm="allocManage" data-action="add-alloc"><i class="bi bi-person-workspace me-1"></i>Allocate</button>
         </div>
       </div>
       <div class="alert alert-light border small py-2 mb-3 d-none" id="avHowTo"></div>
-      <div class="card soft-card mb-3" data-perm="admin">
+      <div class="card soft-card mb-3" data-perm="allocManage">
         <div class="card-body p-2 p-md-3">
           <div class="row g-2">
             <div class="col-12 col-lg-6">
@@ -333,11 +333,12 @@
 
     <!-- ---------- ADMIN ---------- -->
     <div id="view-admin" class="app-view d-none">
-      <h4 class="fw-bold mb-3">Admin Panel</h4>
+      <h4 class="fw-bold mb-3" id="adminTitle">Admin Panel</h4>
       <ul class="nav nav-tabs mb-3 flex-nowrap tabs-scroll" id="adminTabs">
-        <li class="nav-item"><a class="nav-link active" href="#" data-action="admin-tab" data-tab="overview">Overview</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-action="admin-tab" data-tab="users">Users</a></li>
-        <li class="nav-item"><a class="nav-link text-nowrap" href="#" data-action="admin-tab" data-tab="log">Activity log</a></li>
+        <li class="nav-item" data-perm="admin"><a class="nav-link active" href="#" data-action="admin-tab" data-tab="overview">Overview</a></li>
+        <li class="nav-item" data-perm="admin"><a class="nav-link" href="#" data-action="admin-tab" data-tab="users">Users &amp; permissions</a></li>
+        <li class="nav-item" data-perm="manageCats"><a class="nav-link" href="#" data-action="admin-tab" data-tab="categories">Categories</a></li>
+        <li class="nav-item" data-perm="admin"><a class="nav-link text-nowrap" href="#" data-action="admin-tab" data-tab="log">Activity log</a></li>
       </ul>
 
       <div id="tab-overview" class="admin-tab"></div>
@@ -348,6 +349,24 @@
           <button class="btn btn-primary ms-auto" data-action="add-user"><i class="bi bi-person-plus me-1"></i>Add user</button>
         </div>
         <div id="aUsers"></div>
+      </div>
+
+      <div id="tab-categories" class="admin-tab d-none">
+        <div class="row g-3">
+          <div class="col-lg-7">
+            <div class="card soft-card"><div class="card-body">
+              <h6 class="fw-bold mb-1"><i class="bi bi-tags me-2 text-brand"></i>Item categories</h6>
+              <p class="small text-muted mb-3">The list people choose from when adding or editing an item. Renaming a category also renames it on every item in it; renaming it to a name that already exists merges the two.</p>
+              <form id="catAddForm" class="d-flex gap-2 mb-3" novalidate>
+                <input class="form-control" id="catNew" maxlength="60" placeholder="New category, e.g. Robotics Kits" autocomplete="off">
+                <button class="btn btn-primary text-nowrap" type="submit"><i class="bi bi-plus-lg me-1"></i>Add</button>
+              </form>
+              <div id="catError" class="alert alert-danger py-2 small d-none"></div>
+              <div id="aCats"></div>
+            </div></div>
+          </div>
+          <div class="col-lg-5" id="aCatsExtra"></div>
+        </div>
       </div>
 
       <div id="tab-log" class="admin-tab d-none">
@@ -382,7 +401,7 @@
       <div class="modal-body" id="imBody"></div>
       <div class="modal-footer justify-content-between" id="imFooter">
         <button class="btn btn-outline-danger" data-perm="deleteItem" data-action="delete-item" id="imDelete"><i class="bi bi-trash me-1"></i>Delete</button>
-        <button class="btn btn-outline-primary ms-auto" data-perm="admin" data-action="allocate-item" id="imAlloc"><i class="bi bi-person-workspace me-1"></i>Allocate</button>
+        <button class="btn btn-outline-primary ms-auto" data-perm="allocManage" data-action="allocate-item" id="imAlloc"><i class="bi bi-person-workspace me-1"></i>Allocate</button>
         <button class="btn btn-primary" data-perm="editItem" data-action="edit-item" id="imEdit"><i class="bi bi-pencil me-1"></i>Edit item</button>
       </div>
     </div>
@@ -422,9 +441,9 @@
             </div>
             <div class="row g-2 mb-3">
               <div class="col-7">
-                <label class="form-label small fw-medium">Category</label>
-                <input class="form-control" id="ifCategory" list="catList" maxlength="100" placeholder="Choose or type">
-                <datalist id="catList"></datalist>
+                <label class="form-label small fw-medium" for="ifCategory">Category</label>
+                <select class="form-select" id="ifCategory"></select>
+                <div class="form-text">Missing one? <a href="#" data-action="manage-cats">Edit the list</a></div>
               </div>
               <div class="col-5">
                 <label class="form-label small fw-medium">Condition</label>
@@ -610,6 +629,7 @@
             <label class="form-label small fw-medium">User type</label>
             <select class="form-select" id="ufRole">
               <option value="student">Student</option>
+              <option value="faculty">Faculty</option>
               <option value="ra">RA</option>
               <option value="admin">Admin</option>
             </select>
@@ -622,6 +642,13 @@
           </div>
         </div>
         <div class="form-text mb-3 mt-n2" id="ufRoleHelp"></div>
+        <div class="mb-3" id="ufPermsWrap">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label small fw-medium mb-0">Extra permissions</label>
+            <span class="small"><a href="#" data-action="perms-all">All</a> · <a href="#" data-action="perms-none">None</a></span>
+          </div>
+          <div class="border rounded p-2 small" id="ufPerms"></div>
+        </div>
         <div id="ufPassWrap">
           <label class="form-label small fw-medium">Password *</label>
           <div class="input-group">

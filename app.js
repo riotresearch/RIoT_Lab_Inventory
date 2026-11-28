@@ -9,14 +9,13 @@
    is read from config.js. Do NOT edit it here: the website's security
    policy only allows this exact script. Inside Apps Script it is ignored.
    --------------------------------------------------------------------- */
-const API_URL = String((window.RIOT_CONFIG && window.RIOT_CONFIG.apiUrl) || 'PASTE_YOUR_WEB_APP_EXEC_URL_HERE').trim();
+const API_URL = String((window.RIOT_CONFIG && window.RIOT_CONFIG.apiUrl) || 'https://script.google.com/macros/s/AKfycbxsW_v19SkMVE3wH6y2OumhT54-cVhAuQUKi1DIpLgDnEqSfIrI8QFfHzC-90RNNifk/exec').trim();
 
 let CFG = {   // defaults; the server's settings replace these after sign-in
   labName: 'RIoT Center', orgName: 'Independent University, Bangladesh', appTitle: 'RIoT Center Inventory',
-  raCanEditItems: true, requestRoles: ['student', 'ra', 'admin'], approverRoles: ['ra', 'admin'], autoApproveRoles: ['admin'],
-  approvalBy: { student: ['ra', 'admin'], ra: ['admin'], admin: ['admin'] },
-  roomVisibleTo: ['admin', 'ra'], showCreditTo: ['ra', 'student'], allocRequestRoles: ['ra', 'student'],
-  roles: { student: 'Student', ra: 'Research Assistant (RA)', admin: 'Admin' },
+  showCreditTo: ['ra', 'student', 'faculty'],
+  roles: { student: 'Student', faculty: 'Faculty', ra: 'Research Assistant (RA)', admin: 'Admin' },
+  perms: {}, maxPending: 15,
   creditName: 'JH Rony', creditUrl: 'https://rony-cse.github.io/',
   rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6'],
   categories: ['Sensors', 'Microcontrollers & Boards', 'Modules', 'Actuators & Motors', 'Power & Batteries',
@@ -25,7 +24,7 @@ let CFG = {   // defaults; the server's settings replace these after sign-in
 };
 const IN_APPS_SCRIPT = typeof google !== 'undefined' && !!(google.script && google.script.run);
 const S = { token: null, user: null, items: [], myLoans: [], allLoans: [], users: [], log: [], overview: null, pending: null,
-            view: 'inventory', adminTab: 'overview', reqFilter: 'requests', allocFilter: '', allocs: [], cat: '', room: '', layout: 'grid', currentItem: null, imgCache: {} };
+            view: 'inventory', adminTab: 'overview', catEdit: null, reqFilter: 'requests', allocFilter: '', allocs: [], cat: '', room: '', layout: 'grid', currentItem: null, imgCache: {} };
 
 // ---------- small helpers ----------
 const $ = (s) => document.querySelector(s);
@@ -39,20 +38,25 @@ const store = {
 };
 const role = () => (S.user ? S.user.Role : '');
 const isAdmin = () => role() === 'admin';
-/* What each user type may do (the server enforces the same rules). */
+/* What this person may do: everyone can view & request; the Admin gives extra permissions per person.
+   (Only shows/hides buttons — the server checks the same permissions on every action.) */
 const inRoles = (list) => (list || []).indexOf(role()) >= 0;
+const has = (k) => isAdmin() || !!(S.user && (S.user.Permissions || []).indexOf(k) >= 0);
 const CAN = {
   admin: () => role() === 'admin',
-  addItem: () => role() === 'admin' || role() === 'ra',
-  editItem: () => role() === 'admin' || (role() === 'ra' && CFG.raCanEditItems),
-  deleteItem: () => role() === 'admin',
-  request: () => inRoles(CFG.requestRoles),
-  approve: () => inRoles(CFG.approverRoles),
-  takeDirect: () => inRoles(CFG.autoApproveRoles),
+  addItem: () => has('add_items'),
+  editItem: () => has('edit_items'),
+  deleteItem: () => has('delete_items'),
+  request: () => !!S.user,
+  approve: () => isAdmin() || !!(S.user && (S.user.Permissions || []).some((k) => k.indexOf('approve_') === 0)),
+  takeDirect: () => isAdmin(),
   loansView: () => !!S.user,
   allocView: () => !!S.user,
-  allocRequest: () => inRoles(CFG.allocRequestRoles),
-  seeRoom: () => inRoles(CFG.roomVisibleTo),
+  allocRequest: () => !!S.user && !isAdmin(),
+  allocManage: () => has('allocations'),
+  seeRoom: () => has('see_rooms'),
+  manageCats: () => has('add_items') || has('edit_items'),
+  manage: () => isAdmin() || CAN.manageCats(),
   credit: () => !!CFG.creditName && inRoles(CFG.showCreditTo),
 };
 function applyPerms(root) {
@@ -229,6 +233,8 @@ function showApp() {
   $('#appView').classList.remove('d-none');
   $('#navUser').textContent = S.user.FullName || S.user.Username;
   $('#navUserRole').textContent = '@' + S.user.Username + ' · ' + ((CFG.roles || {})[role()] || role());
+  $('#navAdminLabel').textContent = isAdmin() ? 'Admin' : 'Manage';
+  $('#adminTitle').textContent = isAdmin() ? 'Admin Panel' : 'Manage';
   applyPerms();
   fillCategoryList(); fillRoomFilter(); renderBadge();
 }
@@ -238,6 +244,7 @@ function renderCurrent() {
   else if (S.view === 'requests') renderRequests();
   else if (S.view === 'alloc') renderAlloc();
   else if (S.view === 'admin' && S.adminTab === 'overview') renderOverview();
+  else if (S.view === 'admin' && S.adminTab === 'categories') renderCats();
 }
 /** Get fresh data. visible = show the spinner (Refresh buttons); otherwise it runs quietly. Resolves true/false. */
 function sync(visible) {
@@ -289,8 +296,8 @@ function renderBadge() {
   const b = $('#navBadge'), n = CAN.approve() ? req + ret : 0;
   b.textContent = n; b.classList.toggle('d-none', !n);
   b.title = req + ' request(s) to approve, ' + ret + ' return(s) to check';
-  const ar = CAN.admin() ? S.allocs.filter((a) => a.Status === 'REQUESTED').length : 0;
-  const at = CAN.admin() ? S.allocs.filter((a) => a.Status === 'RETURN_PENDING').length : 0;
+  const ar = S.allocs.filter((a) => a.CanAct && a.Status === 'REQUESTED').length;
+  const at = S.allocs.filter((a) => a.CanAct && a.Status === 'RETURN_PENDING').length;
   const c = $('#navBadgeAlloc');
   c.textContent = ar + at; c.classList.toggle('d-none', !(ar + at));
   c.title = ar + ' allocation request(s), ' + at + ' return(s) to check';
@@ -305,14 +312,14 @@ async function doLogout() {
 //  NAVIGATION
 // =====================================================================
 function setView(v) {
-  if ((v === 'admin' && !CAN.admin()) || (v === 'loans' && !CAN.request()) || (v === 'requests' && !CAN.loansView()) ||
+  if ((v === 'admin' && !CAN.manage()) || (v === 'loans' && !CAN.request()) || (v === 'requests' && !CAN.loansView()) ||
       (v === 'alloc' && !CAN.allocView()) || !document.getElementById('view-' + v)) v = 'inventory';
   S.view = v; store.set('riot_view', v);
   $$('.app-view').forEach((el) => el.classList.toggle('d-none', el.id !== 'view-' + v));
   $$('.app-nav .nav-link').forEach((el) => el.classList.toggle('active', el.dataset.view === v));
   const nav = document.getElementById('mainNav');
   if (nav.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(nav).hide();
-  if (v === 'admin') setAdminTab(S.adminTab === 'loans' || S.adminTab === 'allocations' ? 'overview' : S.adminTab);
+  if (v === 'admin') setAdminTab(S.adminTab);
   else renderCurrent();                                     // instant, from memory
   window.scrollTo(0, 0);
   if (Date.now() - lastSync > STALE_MS) sync(false);        // then refresh quietly if older than 20 s
@@ -326,8 +333,15 @@ function allCategories() {
   S.items.forEach((i) => i.Category && set.add(String(i.Category)));
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
-function fillCategoryList() {   // suggestions in the Add/Edit item form
-  $('#catList').innerHTML = allCategories().map((c) => '<option value="' + esc(c) + '">').join('');
+/** Category choice in the item form: the managed list (+ the item's own category if it is not in the list). */
+function setCatField(value) {
+  const v = String(value || '').trim(), list = (CFG.categories || []).slice();
+  if (v && !list.some((c) => c.toLowerCase() === v.toLowerCase())) list.push(v);
+  $('#ifCategory').innerHTML = '<option value="">— choose —</option>' + list.map((c) => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
+  const hit = list.find((c) => c.toLowerCase() === v.toLowerCase());
+  $('#ifCategory').value = hit || '';
+}
+function fillCategoryList() {   // suggestions in the Add/Edit item form (shelf / box)
   const locs = new Set(S.items.map((i) => String(i.Location || '').trim()).filter(Boolean));
   $('#locList').innerHTML = Array.from(locs).sort().map((c) => '<option value="' + esc(c) + '">').join('');
 }
@@ -568,7 +582,7 @@ function openItem(id) {
     }
   }
   html += '<hr><h6 class="fw-bold mb-2"><i class="bi bi-people me-2 text-brand"></i>Who has requested / borrowed this</h6><div id="imLoans" class="small text-muted">' + itemLoansHtml(it) + '</div>';
-  if (CAN.admin()) html += '<h6 class="fw-bold mb-2 mt-3"><i class="bi bi-person-workspace me-2 text-brand"></i>Allocated to</h6><div id="imAllocs" class="small text-muted">' + itemAllocsHtml(it) + '</div>';
+  if (CAN.allocManage()) html += '<h6 class="fw-bold mb-2 mt-3"><i class="bi bi-person-workspace me-2 text-brand"></i>Allocated to</h6><div id="imAllocs" class="small text-muted">' + itemAllocsHtml(it) + '</div>';
   $('#imBody').innerHTML = html;
   const f = $('#borrowForm');
   if (f) {
@@ -577,7 +591,7 @@ function openItem(id) {
     borrowKindChanged();
   }
   applyPerms($('#imFooter'));
-  $('#imFooter').classList.toggle('d-none', !(CAN.editItem() || CAN.deleteItem()));
+  $('#imFooter').classList.toggle('d-none', !(CAN.editItem() || CAN.deleteItem() || CAN.allocManage()));
   modal('itemModal').show();
 }
 /* lists inside the item detail come straight from memory: no waiting */
@@ -599,7 +613,7 @@ function borrowKindChanged() {
   const alloc = !!($('#bKindAlloc') && $('#bKindAlloc').checked), direct = CAN.takeDirect();
   $('#bDateWrap').classList.toggle('d-none', alloc);
   $('#bHelp').textContent = alloc
-    ? 'For long-term use (e.g. a laptop or desktop for your work). The Admin decides; you will see it under Allocation.'
+    ? 'For long-term use (e.g. a laptop or desktop for your work). The Admin (or an allocation manager) decides; you will see it under Allocation.'
     : (direct ? '' : approverText().replace(/^./, (c) => c.toUpperCase()) + ' will approve your request. Collect the item from the lab after it is approved.');
   $('#bHelp').classList.toggle('d-none', !$('#bHelp').textContent);
   $('#bSubmit').innerHTML = alloc ? '<i class="bi bi-pc-display me-1"></i>Send allocation request'
@@ -615,7 +629,7 @@ async function submitBorrow(e) {
       const ra = await api('requestAllocation', it.ItemID, Number($('#bQty').value), $('#bPurpose').value);
       S.allocs.unshift(ra.allocation);
       modal('itemModal').hide(); renderBadge();
-      toast('Allocation request sent for ' + ra.allocation.Qty + ' × ' + ra.allocation.ItemName + '. The Admin will decide — see Allocation.');
+      toast('Allocation request sent for ' + ra.allocation.Qty + ' × ' + ra.allocation.ItemName + '. You will see the answer under Allocation.');
       return;
     }
     const r = await api('requestLoan', it.ItemID, Number($('#bQty').value), $('#bPurpose').value, $('#bDate').value);
@@ -653,7 +667,7 @@ function openItemForm(id) {
   fillCategoryList();
   $('#ifId').value = it ? it.ItemID : '';
   $('#ifName').value = it ? it.Name : '';
-  $('#ifCategory').value = it ? it.Category : '';
+  setCatField(it ? it.Category : '');
   $('#ifCondition').value = it ? (it.Condition || '') : 'New';
   $('#ifTotal').value = it ? it.TotalQty : 1;
   $('#ifMin').value = it && it.MinQty ? it.MinQty : '';
@@ -707,7 +721,7 @@ function showSuggest() {
 function pickSuggest(i) {
   const it = sugList[i]; if (!it) return;
   $('#ifName').value = it.Name;
-  if (!$('#ifCategory').value) $('#ifCategory').value = it.Category || '';
+  if (!$('#ifCategory').value) setCatField(it.Category || '');
   hideSuggest(); checkDuplicate();
 }
 function moveSuggest(d) {
@@ -728,9 +742,12 @@ function checkDuplicate() {
   }
 }
 $('#ifName').addEventListener('input', showSuggest);
-$('#ifName').addEventListener('focus', showSuggest);
-$('#ifName').addEventListener('blur', () => setTimeout(hideSuggest, 150));
+let sugBlurTimer = null;
+$('#ifName').addEventListener('focus', () => { clearTimeout(sugBlurTimer); showSuggest(); });
+$('#ifName').addEventListener('blur', () => { clearTimeout(sugBlurTimer); sugBlurTimer = setTimeout(hideSuggest, 150); });
 $('#ifName').addEventListener('keydown', (e) => {
+  // Enter in the name box never saves the half-filled form: it picks a suggestion or moves to the next field
+  if (e.key === 'Enter' && (sugIndex < 0 || $('#ifNameSug').classList.contains('d-none'))) { e.preventDefault(); hideSuggest(); $('#ifCategory').focus(); return; }
   if ($('#ifNameSug').classList.contains('d-none')) return;
   if (e.key === 'ArrowDown') { e.preventDefault(); moveSuggest(1); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggest(-1); }
@@ -848,10 +865,7 @@ function loanLabel(l) {
     default: return [l.Status || '—', 'light'];
   }
 }
-function approverText(r) {
-  const names = { ra: 'an RA', admin: 'the Admin', student: 'a student' };
-  return ((CFG.approvalBy || {})[r || role()] || ['admin']).map((x) => names[x] || x).join(' or ');
-}
+function approverText() { return 'the Admin or an approver'; }
 function statusBadge(l) {
   const [t, c] = loanLabel(l);
   return '<span class="badge text-bg-' + c + (c === 'light' ? ' border' : '') + '">' + esc(t) + '</span>';
@@ -926,7 +940,7 @@ const REQ_FILTERS = [
 function loadRequests() { return sync(true); }
 function renderRequests() {
   $('#reqSub').textContent = CAN.approve()
-    ? 'Approve requests and check returned items' + (role() === 'ra' ? ' (students’ requests; RA requests are approved by the Admin)' : '') + '. Everyone can see this list.'
+    ? 'Approve requests and check returned items' + (isAdmin() ? '' : ' (the people you are allowed to approve; never your own)') + '. Everyone can see this list.'
     : 'Who has asked for or borrowed what. Open an item in Inventory to request it.';
   const counts = {};
   // badge counts: for RA/Admin only what they can act on
@@ -946,7 +960,7 @@ function renderRequests() {
     const it = S.items.find((x) => x.ItemID === l.ItemID);
     let buttons = '';
     if (!l.CanAct) {
-      if (CAN.approve() && (l.Status === 'REQUESTED' || l.Status === 'RETURN_PENDING')) buttons = '<span class="small text-muted"><i class="bi bi-shield-lock me-1"></i>' + esc(approverText(l.Role).replace(/^./, (c) => c.toUpperCase())) + ' handles this</span>';
+      if (CAN.approve() && (l.Status === 'REQUESTED' || l.Status === 'RETURN_PENDING')) buttons = '<span class="small text-muted"><i class="bi bi-shield-lock me-1"></i>' + (S.user && l.Username === S.user.Username ? 'Your own — another approver handles it' : 'Another approver handles ' + esc((CFG.roles || {})[l.Role] || l.Role) + ' requests') + '</span>';
     } else if (l.Status === 'REQUESTED') {
       buttons = '<button class="btn btn-success btn-sm" data-action="approve-req" data-id="' + esc(l.LoanID) + '"><i class="bi bi-check-lg me-1"></i>Approve</button>' +
                 '<button class="btn btn-outline-danger btn-sm" data-action="reject-req" data-id="' + esc(l.LoanID) + '"><i class="bi bi-x-lg me-1"></i>Reject</button>';
@@ -956,7 +970,7 @@ function renderRequests() {
     return '<div class="col-md-6 col-xl-4"><div class="card req-card h-100"><div class="card-body d-flex flex-column">' +
       '<div class="d-flex justify-content-between align-items-start gap-2 mb-1"><div class="small text-muted">' + esc(l.LoanID) + '</div>' + statusBadge(l) + '</div>' +
       '<h6 class="fw-bold mb-1"><a href="#" class="text-reset text-decoration-none" data-action="open-item" data-id="' + esc(l.ItemID) + '">' + l.Qty + ' × ' + esc(l.ItemName) + '</a></h6>' +
-      '<div class="who mb-1"><i class="bi bi-person me-1"></i>' + esc(l.FullName) + ' <span class="text-muted">@' + esc(l.Username) + '</span>' + (l.Role === 'ra' || l.Role === 'admin' ? ' ' + roleBadge(l.Role) : '') + '</div>' +
+      '<div class="who mb-1"><i class="bi bi-person me-1"></i>' + esc(l.FullName) + ' <span class="text-muted">@' + esc(l.Username) + '</span>' + (l.Role !== 'student' ? ' ' + roleBadge(l.Role) : '') + '</div>' +
       '<div class="small text-muted mb-2">' + esc(l.Purpose) + '</div>' +
       '<div class="small">' + (l.Status === 'REQUESTED' ? 'Requested ' + fmtDateTime(l.RequestedAt) : (l.BorrowedAt ? 'Taken ' + fmtDateTime(l.BorrowedAt) : '')) + '</div>' +
       (l.ExpectedReturn ? '<div class="small' + (isOverdue(l) ? ' text-danger fw-semibold' : '') + '">Return by ' + fmtDate(l.ExpectedReturn) + '</div>' : '') +
@@ -1087,12 +1101,15 @@ async function submitVerify(e) {
 //  ADMIN
 // =====================================================================
 function setAdminTab(tab) {
+  if (!isAdmin()) tab = 'categories';                     // others only manage the category list
+  else if (['overview', 'users', 'categories', 'log'].indexOf(tab) < 0) tab = 'overview';
   S.adminTab = tab;
   $$('#adminTabs .nav-link').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
   $$('.admin-tab').forEach((el) => el.classList.toggle('d-none', el.id !== 'tab-' + tab));
   // show what we already have at once, then refresh quietly
   if (tab === 'overview') { renderOverview(); call('getAdminOverview', [S.token]).then((ov) => { S.overview = ov; if (S.view === 'admin' && S.adminTab === 'overview') renderOverview(); }).catch(() => {}); }
   if (tab === 'users') { if (S.users.length) renderUsers(); (S.users.length ? call('listUsers', [S.token]) : api('listUsers')).then((u) => { S.users = u; renderUsers(); }).catch(fail); }
+  if (tab === 'categories') { S.catEdit = null; showErr('#catError', ''); renderCats(); }
   if (tab === 'log') { if (S.log.length) renderLog(); (S.log.length ? call('getLog', [S.token, 300]) : api('getLog', 300)).then((l) => { S.log = l; renderLog(); }).catch(fail); }
 }
 
@@ -1132,11 +1149,11 @@ function fillAllocRoomFilter() {
   sel.value = keep; if (sel.value !== keep) sel.value = '';
 }
 function renderAlloc() {
-  const admin = CAN.admin();
+  const admin = CAN.allocManage();
   $('#avSub').textContent = admin ? 'Who has which device for long-term use. Search, filter by room, or group by person or room.' : 'Devices allocated to you for long-term use';
   $('#avHowTo').classList.toggle('d-none', admin);
   if (!admin) $('#avHowTo').innerHTML = '<i class="bi bi-info-circle me-1"></i><b>How it works:</b> to ask for a device (e.g. a laptop or desktop), open it in Inventory → <b>Request this item</b> → <b>Allocate to me (long-term)</b>. ' +
-    'The Admin approves it. When you no longer need it, press <b>Request return</b> and hand it over; the Admin checks it and closes the allocation.';
+    'The Admin (or an allocation manager) approves it. When you no longer need it, press <b>Request return</b> and hand it over; they check it and close the allocation.';
   const filters = AL_FILTERS[admin ? 'admin' : 'user'];
   if (!filters.some(([k]) => k === S.allocFilter)) S.allocFilter = admin && S.allocs.some((a) => a.Status === 'REQUESTED') ? 'requests' : 'current';
   $('#avFilters').innerHTML = filters.map(([k, label, fn]) => {
@@ -1183,18 +1200,18 @@ function renderAlloc() {
   }
 }
 function allocCard(a, words) {
-  const admin = CAN.admin(), own = S.user && a.Username === S.user.Username;
+  const admin = CAN.allocManage(), own = S.user && a.Username === S.user.Username;
   let buttons = '';
   if (a.Status === 'REQUESTED') {
-    if (admin) buttons = '<button class="btn btn-success btn-sm" data-action="alloc-approve" data-id="' + esc(a.AllocID) + '"><i class="bi bi-check-lg me-1"></i>Approve</button>' +
+    if (a.CanAct) buttons = '<button class="btn btn-success btn-sm" data-action="alloc-approve" data-id="' + esc(a.AllocID) + '"><i class="bi bi-check-lg me-1"></i>Approve</button>' +
                          '<button class="btn btn-outline-danger btn-sm" data-action="alloc-reject" data-id="' + esc(a.AllocID) + '"><i class="bi bi-x-lg me-1"></i>Reject</button>';
     else if (own) buttons = '<button class="btn btn-outline-danger btn-sm" data-action="alloc-cancel" data-id="' + esc(a.AllocID) + '"><i class="bi bi-x-circle me-1"></i>Cancel request</button>';
   } else if (a.Status === 'ACTIVE') {
-    if (admin) buttons = '<button class="btn btn-outline-primary btn-sm" data-action="end-alloc" data-id="' + esc(a.AllocID) + '"><i class="bi bi-box-arrow-in-down-left me-1"></i>End allocation</button>';
+    if (a.CanAct) buttons = '<button class="btn btn-outline-primary btn-sm" data-action="end-alloc" data-id="' + esc(a.AllocID) + '"><i class="bi bi-box-arrow-in-down-left me-1"></i>End allocation</button>';
     else if (own) buttons = '<button class="btn btn-outline-primary btn-sm" data-action="alloc-return" data-id="' + esc(a.AllocID) + '"><i class="bi bi-box-arrow-in-down-left me-1"></i>Request return</button>';
   } else if (a.Status === 'RETURN_PENDING') {
-    if (admin) buttons = '<button class="btn btn-primary btn-sm" data-action="end-alloc" data-id="' + esc(a.AllocID) + '"><i class="bi bi-clipboard-check me-1"></i>Check &amp; accept return</button>';
-    else buttons = '<span class="small text-muted"><i class="bi bi-hourglass-split me-1"></i>The Admin will check it and close the allocation.</span>';
+    if (a.CanAct) buttons = '<button class="btn btn-primary btn-sm" data-action="end-alloc" data-id="' + esc(a.AllocID) + '"><i class="bi bi-clipboard-check me-1"></i>Check &amp; accept return</button>';
+    else buttons = '<span class="small text-muted"><i class="bi bi-hourglass-split me-1"></i>' + (own ? 'The Admin (or an allocation manager) will check it and close the allocation.' : 'Another manager handles this.') + '</span>';
   }
   const room = allocRoom(a), it = S.items.find((x) => x.ItemID === a.ItemID);
   return '<div class="col-md-6 col-xl-4"><div class="card req-card h-100"><div class="card-body d-flex flex-column">' +
@@ -1218,18 +1235,18 @@ async function cancelAllocRequest(id) {
 }
 async function requestAllocReturn(id) {
   const a = S.allocs.find((x) => x.AllocID === id); if (!a) return;
-  if (!(await confirmBox('Return ' + a.Qty + ' × ' + a.ItemName + '?', 'Hand it over to the Admin. The Admin will check it and close the allocation.', 'Yes, request return'))) return;
-  try { const r = await api('reportAllocationReturn', id); replaceAlloc(r.allocation); renderAlloc(); toast('Return requested. The Admin will check the item.'); } catch (e) { fail(e); }
+  if (!(await confirmBox('Return ' + a.Qty + ' × ' + a.ItemName + '?', 'Hand it over in the lab. The Admin (or an allocation manager) will check it and close the allocation.', 'Yes, request return'))) return;
+  try { const r = await api('reportAllocationReturn', id); replaceAlloc(r.allocation); renderAlloc(); toast('Return requested. The item will be checked.'); } catch (e) { fail(e); }
 }
 async function openAllocate(itemId) {
   $('#allocForm').reset(); showErr('#alError', '');
-  if (!S.users.length) { try { S.users = await api('listUsers'); } catch (e) { return fail(e); } }
+  if (!S.users.length) { try { S.users = await api(isAdmin() ? 'listUsers' : 'listPeople'); } catch (e) { return fail(e); } }
   const items = S.items.filter((i) => i.AvailableQty > 0 || i.ItemID === itemId).sort((a, b) => String(a.Name).localeCompare(String(b.Name)));
   $('#alItem').innerHTML = '<option value="">Choose an item…</option>' + items.map((i) =>
     '<option value="' + esc(i.ItemID) + '">' + esc(i.Name) + ' (' + esc(i.ItemID) + ') — ' + i.AvailableQty + ' available</option>').join('');
   $('#alItem').value = itemId || '';
   $('#alRoomIn').value = '';
-  const users = S.users.filter((u) => u.Active).sort((a, b) => ROLE_ORDER[a.Role] - ROLE_ORDER[b.Role] || a.FullName.localeCompare(b.FullName));
+  const users = S.users.filter((u) => u.Active && (isAdmin() || u.Username !== S.user.Username)).sort((a, b) => ROLE_ORDER[a.Role] - ROLE_ORDER[b.Role] || a.FullName.localeCompare(b.FullName));
   $('#alUser').innerHTML = '<option value="">Choose a person…</option>' + users.map((u) =>
     '<option value="' + esc(u.Username) + '">' + esc(u.FullName) + ' (@' + esc(u.Username) + ') — ' + esc((CFG.roles || {})[u.Role] || u.Role) + '</option>').join('');
   allocHelp();
@@ -1287,31 +1304,47 @@ function renderOverview() {
 }
 
 // ---------- users ----------
-const ROLE_ORDER = { admin: 0, ra: 1, student: 2 };
+const ROLE_ORDER = { admin: 0, faculty: 1, ra: 2, student: 3 };
 function roleBadge(r) {
   if (r === 'admin') return '<span class="badge text-bg-dark">Admin</span>';
+  if (r === 'faculty') return '<span class="badge text-bg-primary">Faculty</span>';
   if (r === 'ra') return '<span class="badge text-bg-info">RA</span>';
   return '<span class="badge text-bg-light border">Student</span>';
 }
+/* short names for the Users table */
+const PERM_SHORT = { add_items: 'Add items', edit_items: 'Edit items', delete_items: 'Delete items', approve_student: 'Approve students',
+                     approve_faculty: 'Approve faculty', approve_ra: 'Approve RAs', allocations: 'Allocations', see_rooms: 'See rooms' };
+const PERM_GROUPS = [['Items', ['add_items', 'edit_items', 'delete_items', 'see_rooms']],
+                     ['Loan approvals', ['approve_student', 'approve_faculty', 'approve_ra']], ['Allocation', ['allocations']]];
+function permsSummary(u) {
+  if (u.Role === 'admin') return '<span class="text-muted">Everything</span>';
+  const p = u.Permissions || [];
+  return p.length ? p.map((k) => '<span class="badge text-bg-light border fw-normal me-1">' + esc(PERM_SHORT[k] || k) + '</span>').join('')
+    : '<span class="text-muted">Basic</span>';
+}
+function fillPermBoxes(selected) {
+  const labels = Object.assign({}, CFG.perms || {});
+  Object.keys(PERM_SHORT).forEach((k) => { if (!labels[k]) labels[k] = PERM_SHORT[k]; });
+  $('#ufPerms').innerHTML = PERM_GROUPS.map(([title, keys]) => '<div class="fw-semibold text-muted text-uppercase mt-1 mb-1" style="font-size:.72rem">' + esc(title) + '</div>' +
+    keys.map((k) => '<div class="form-check"><input class="form-check-input uf-perm" type="checkbox" id="perm_' + k + '" value="' + k + '"' + (selected.indexOf(k) >= 0 ? ' checked' : '') + '>' +
+      '<label class="form-check-label" for="perm_' + k + '">' + esc(labels[k]) + '</label></div>').join('')).join('');
+}
+const chosenPerms = () => $$('.uf-perm').filter((b) => b.checked).map((b) => b.value);
 function roleHelp() {
-  const r = $('#ufRole').value, has = (list) => (list || []).indexOf(r) >= 0;
-  const can = ['search and view the inventory'];
-  if (r === 'admin' || r === 'ra') can.push('add' + (r === 'admin' || CFG.raCanEditItems ? ' and edit' : '') + ' items');
-  if (has(CFG.requestRoles)) can.push(has(CFG.autoApproveRoles) ? 'take items out directly' : 'request to borrow items (approved by ' + approverText(r) + ')');
-  const approves = Object.keys(CFG.approvalBy || {}).filter((k) => k !== r && (CFG.approvalBy[k] || []).indexOf(r) >= 0).map((k) => k === 'ra' ? 'RAs’' : k + 's’');
-  if (approves.length) can.push('approve ' + approves.join(' and ') + ' requests and check their returns');
-  if (r === 'admin') can.push('allocate items (e.g. laptops), delete items, manage users and see the activity log');
-  const last = can.pop();
-  $('#ufRoleHelp').textContent = ((CFG.roles || {})[r] || r) + ': can ' + (can.length ? can.join(', ') + ' and ' : '') + last + '.';
+  const r = $('#ufRole').value, admin = r === 'admin';
+  $('#ufPermsWrap').classList.toggle('d-none', admin);
+  $('#ufRoleHelp').textContent = admin
+    ? 'Admin: can do everything — all permissions, users, allocations, deleting items and the activity log.'
+    : ((CFG.roles || {})[r] || r) + ': everyone can search the inventory, request to borrow items, ask for a long-term allocation and see the Loans list. Tick anything extra below.';
 }
 function renderUsers() {
   const q = $('#aUserSearch').value.trim().toLowerCase();
   const list = S.users.filter((u) => !q || [u.Username, u.FullName, u.Contact].join(' ').toLowerCase().indexOf(q) >= 0)
     .sort((a, b) => ROLE_ORDER[a.Role] - ROLE_ORDER[b.Role] || a.Username.localeCompare(b.Username));
   $('#aUsers').innerHTML = '<div class="card table-card"><div class="table-responsive"><table class="table table-hover small">' +
-    '<thead class="table-light"><tr><th>User</th><th>Contact</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead><tbody>' +
+    '<thead class="table-light"><tr><th>User</th><th>Contact</th><th>Type</th><th>Permissions</th><th>Status</th><th>Last login</th><th></th></tr></thead><tbody>' +
     list.map((u) => '<tr' + (u.Active ? '' : ' class="text-muted"') + '><td><b>' + esc(u.FullName) + '</b><div class="text-muted">@' + esc(u.Username) + '</div></td>' +
-      '<td>' + esc(u.Contact) + '</td><td>' + roleBadge(u.Role) + '</td>' +
+      '<td>' + esc(u.Contact) + '</td><td>' + roleBadge(u.Role) + '</td><td style="min-width:140px">' + permsSummary(u) + '</td>' +
       '<td>' + (u.Active ? '<span class="badge text-bg-success">Active</span>' : '<span class="badge text-bg-secondary">Disabled</span>') + '</td>' +
       '<td class="text-nowrap">' + fmtDateTime(u.LastLogin) + '</td>' +
       '<td class="text-end"><div class="dropdown"><button class="btn btn-sm btn-light border" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button><ul class="dropdown-menu dropdown-menu-end">' +
@@ -1321,7 +1354,8 @@ function renderUsers() {
         (u.Username !== S.user.Username ? '<li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="#" data-action="delete-user" data-id="' + esc(u.Username) + '"><i class="bi bi-trash me-2"></i>Delete</a></li>' : '') +
       '</ul></div></td></tr>').join('') +
     '</tbody></table></div></div>' +
-    '<p class="small text-muted mt-2">Tip: disable accounts of students who have left instead of deleting them — their loan history stays linked.</p>';
+    '<p class="small text-muted mt-2"><b>Basic</b> = view the inventory, request loans and allocations, see the Loans list. Use <b>Edit</b> to give a person extra permissions (e.g. only some RAs approve loans). ' +
+    'Tip: disable accounts of people who have left instead of deleting them — their loan history stays linked.</p>';
 }
 function openUserForm(username) {
   const u = username ? S.users.find((x) => x.Username === username) : null;
@@ -1332,6 +1366,7 @@ function openUserForm(username) {
   $('#ufFullName').value = u ? u.FullName : '';
   $('#ufContact').value = u ? u.Contact : '';
   $('#ufRole').value = u ? u.Role : 'student';
+  fillPermBoxes(u && u.Role !== 'admin' ? (u.Permissions || []) : []);
   roleHelp();
   $('#ufActive').checked = u ? u.Active : true;
   $('#ufActiveWrap').classList.toggle('d-none', !u);
@@ -1341,7 +1376,8 @@ function openUserForm(username) {
 }
 async function submitUserForm(e) {
   e.preventDefault(); showErr('#ufError', '');
-  const data = { Username: $('#ufUsername').value.trim().toLowerCase(), FullName: $('#ufFullName').value, Contact: $('#ufContact').value, Role: $('#ufRole').value };
+  const data = { Username: $('#ufUsername').value.trim().toLowerCase(), FullName: $('#ufFullName').value, Contact: $('#ufContact').value, Role: $('#ufRole').value,
+                 Permissions: $('#ufRole').value === 'admin' ? [] : chosenPerms() };
   try {
     if ($('#ufMode').value === 'add') {
       const pw = $('#ufPassword').value;
@@ -1352,6 +1388,7 @@ async function submitUserForm(e) {
       data.Active = $('#ufActive').checked;
       const u = await api('updateUser', data);
       S.users[S.users.findIndex((x) => x.Username === u.Username)] = u; renderUsers(); modal('userModal').hide(); toast('User updated');
+      if (u.Username === S.user.Username) sync(false);   // my own permissions changed
     }
   } catch (err) { showErr('#ufError', err.message); }
 }
@@ -1367,6 +1404,70 @@ async function deleteUserAction(username) {
   if (!(await confirmBox('Delete @' + username + '?', 'The account is removed permanently. Consider disabling instead.', 'Delete'))) return;
   try { await api('deleteUser', username); S.users = S.users.filter((x) => x.Username !== username); renderUsers(); toast('User deleted'); }
   catch (e) { fail(e); }
+}
+
+// ---------- categories (Admin + anyone who may add / edit items) ----------
+function catCounts() { const n = {}; S.items.forEach((i) => { const k = String(i.Category || '').trim().toLowerCase(); if (k) n[k] = (n[k] || 0) + 1; }); return n; }
+function renderCats() {
+  const n = catCounts(), list = CFG.categories || [];
+  $('#aCats').innerHTML = list.length ? '<ul class="list-group">' + list.map((cName) => {
+    const cnt = n[cName.toLowerCase()] || 0;
+    if (S.catEdit === cName) {
+      return '<li class="list-group-item"><div class="d-flex gap-2 align-items-center">' +
+        '<input class="form-control form-control-sm" id="catEditInput" maxlength="60" value="' + esc(cName) + '" data-old="' + esc(cName) + '">' +
+        '<button class="btn btn-sm btn-primary" data-action="cat-save"><i class="bi bi-check2"></i><span class="d-none d-sm-inline ms-1">Save</span></button>' +
+        '<button class="btn btn-sm btn-light border" data-action="cat-cancel">Cancel</button></div>' +
+        (cnt ? '<div class="form-text">' + cnt + ' item' + (cnt === 1 ? '' : 's') + ' will move to the new name.</div>' : '') + '</li>';
+    }
+    return '<li class="list-group-item d-flex align-items-center gap-2"><i class="bi ' + catIcon(cName) + ' text-brand"></i>' +
+      '<span class="me-auto">' + esc(cName) + '</span>' +
+      '<span class="badge rounded-pill text-bg-light border text-dark fw-normal" title="Items in this category">' + cnt + '</span>' +
+      '<button class="btn btn-sm btn-light border" data-action="cat-rename" data-id="' + esc(cName) + '" title="Rename"><i class="bi bi-pencil"></i></button>' +
+      '<button class="btn btn-sm btn-light border text-danger" data-action="cat-delete" data-id="' + esc(cName) + '" title="Remove"' + (cnt ? ' disabled' : '') + '><i class="bi bi-trash"></i></button></li>';
+  }).join('') + '</ul><p class="small text-muted mt-2 mb-0">A category with items cannot be removed — rename it, or merge it into another by renaming it to that name.</p>'
+    : '<div class="text-muted small">No categories yet. Add the first one above.</div>';
+  // categories used by items but missing from the list (e.g. typed before this list existed)
+  const known = new Set(list.map((x) => x.toLowerCase())), extra = {};
+  S.items.forEach((i) => { const k = String(i.Category || '').trim(); if (k && !known.has(k.toLowerCase())) extra[k] = (extra[k] || 0) + 1; });
+  const ex = Object.keys(extra).sort((a, b) => a.localeCompare(b));
+  $('#aCatsExtra').innerHTML = ex.length ? '<div class="card soft-card"><div class="card-body"><h6 class="fw-bold mb-1"><i class="bi bi-question-circle me-2 text-warning"></i>Used by items, not in the list</h6>' +
+    '<p class="small text-muted">Add them to the list, or open those items and choose a listed category.</p><ul class="list-group">' +
+    ex.map((k) => '<li class="list-group-item d-flex align-items-center gap-2"><span class="me-auto">' + esc(k) + '</span><span class="badge rounded-pill text-bg-light border text-dark fw-normal">' + extra[k] + '</span>' +
+      '<button class="btn btn-sm btn-outline-primary" data-action="cat-add-existing" data-id="' + esc(k) + '"><i class="bi bi-plus-lg me-1"></i>Add</button></li>').join('') + '</ul></div></div>' : '';
+  const inp = $('#catEditInput'); if (inp) { inp.focus(); inp.select(); }
+}
+function categoriesChanged(list, from, to) {
+  CFG.categories = list;
+  if (from && to) S.items.forEach((i) => { if (String(i.Category || '').trim().toLowerCase() === from.toLowerCase()) i.Category = to; });
+  S.catEdit = null; showErr('#catError', '');
+  renderCats(); fillCategoryList();
+  if (S.view === 'inventory') renderInventory();
+  sync(false);   // bring everything up to date quietly
+}
+async function addCategory(name) {
+  name = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!name) return showErr('#catError', 'Type a category name.');
+  try { const r = await api('saveCategory', '', name); $('#catNew').value = ''; categoriesChanged(r.categories); toast('Category added: ' + name); }
+  catch (e) { showErr('#catError', e.message); }
+}
+async function saveCatEdit() {
+  const inp = $('#catEditInput'); if (!inp) return;
+  const from = inp.dataset.old, to = inp.value.trim().replace(/\s+/g, ' ');
+  if (!to) return showErr('#catError', 'Type a category name.');
+  if (to === from) { S.catEdit = null; renderCats(); return; }
+  const target = (CFG.categories || []).find((x) => x.toLowerCase() === to.toLowerCase() && x !== from);
+  if (target && !(await confirmBox('Merge “' + from + '” into “' + target + '”?', 'All items in “' + from + '” move to “' + target + '”, and “' + from + '” is removed from the list.', 'Merge'))) return;
+  try {
+    const r = await api('saveCategory', from, to);
+    const finalName = target || to;
+    categoriesChanged(r.categories, from, finalName);
+    toast((r.merged ? 'Merged into ' : 'Renamed to ') + finalName + (r.moved ? ' · ' + r.moved + ' item(s) updated' : ''));
+  } catch (e) { showErr('#catError', e.message); }
+}
+async function deleteCat(name) {
+  if (!(await confirmBox('Remove “' + name + '”?', 'It is removed from the category list. No items use it.', 'Remove'))) return;
+  try { const r = await api('deleteCategory', name); categoriesChanged(r.categories); toast('Category removed'); }
+  catch (e) { showErr('#catError', e.message); }
 }
 
 // ---------- passwords ----------
@@ -1453,6 +1554,14 @@ const ACTIONS = {
   'gen-pass': (id, el) => { const t = document.getElementById(el.dataset.target); t.value = genPassword(); t.type = 'text'; },
   'toggle-pass': (id, el) => { const t = document.getElementById(el.dataset.target); t.type = t.type === 'password' ? 'text' : 'password'; },
   'copy-cred': () => copyText($('#credText').textContent),
+  'perms-all': () => $$('.uf-perm').forEach((b) => { b.checked = true; }),
+  'perms-none': () => $$('.uf-perm').forEach((b) => { b.checked = false; }),
+  'manage-cats': () => { modal('itemFormModal').hide(); setTimeout(() => { setView('admin'); setAdminTab('categories'); }, 300); },
+  'cat-rename': (id) => { S.catEdit = id; showErr('#catError', ''); renderCats(); },
+  'cat-cancel': () => { S.catEdit = null; showErr('#catError', ''); renderCats(); },
+  'cat-save': () => saveCatEdit(),
+  'cat-delete': (id) => deleteCat(id),
+  'cat-add-existing': (id) => addCategory(id),
 };
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
@@ -1486,6 +1595,12 @@ $('#avGroup').addEventListener('change', renderAlloc);
 $('#alRoomIn').addEventListener('input', () => { $('#alRoomIn').dataset.touched = '1'; });
 $('#allocModal').addEventListener('show.bs.modal', () => { delete $('#alRoomIn').dataset.touched; });
 $('#aLogSearch').addEventListener('input', renderLog);
+$('#catAddForm').addEventListener('submit', (e) => { e.preventDefault(); showErr('#catError', ''); addCategory($('#catNew').value); });
+$('#aCats').addEventListener('keydown', (e) => {
+  if (e.target.id !== 'catEditInput') return;
+  if (e.key === 'Enter') { e.preventDefault(); saveCatEdit(); }
+  if (e.key === 'Escape') { e.preventDefault(); S.catEdit = null; renderCats(); }
+});
 
 // =====================================================================
 //  START
